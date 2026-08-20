@@ -1,0 +1,47 @@
+@import "tailwindcss";
+
+@media print {
+  @page {
+    margin: 0;
+  }
+  
+  html, body, #root { 
+    background: white !important;
+    color: black !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    display: block !important;
+  }
+
+  /* Relax layout constraints on outer structural ancestors only. DO NOT touch inner divs. */
+  .min-h-screen,
+  main,
+  main > div {
+    display: block !important;
+    position: static !important;
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+  }
+  
+  .no-print, .no-print * {
+    display: none !important;
+  }
+
+  /* Force background colors and borders to print properly */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+

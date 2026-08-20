@@ -1,0 +1,71 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global safety net: default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Match definitions for EduManage schema:
+
+    match /schools/{schoolId} {
+      allow read, write: if true;
+    }
+
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+
+    match /students/{studentId} {
+      allow read, write: if true;
+    }
+
+    match /teachers/{teacherId} {
+      allow read, write: if true;
+    }
+
+    match /homeworks/{homeworkId} {
+      allow read, write: if true;
+    }
+
+    match /marks/{markId} {
+      allow read, write: if true;
+    }
+
+    match /feeRecords/{feeRecordId} {
+      allow read, write: if true;
+    }
+
+    match /issues/{issueId} {
+      allow read, write: if true;
+    }
+
+    match /classFees/{schoolId} {
+      allow read, write: if true;
+    }
+
+    match /schoolConfig/{schoolId} {
+      allow read, write: if true;
+    }
+
+    match /sessionRequests/{requestId} {
+      allow read, write: if true;
+    }
+
+    match /attendances/{attendanceId} {
+      allow read, write: if true;
+    }
+
+    match /notificationLogs/{logId} {
+      allow read, write: if true;
+    }
+
+    match /attendanceRequests/{requestId} {
+      allow read, write: if true;
+    }
+
+    match /parentAccounts/{parentId} {
+      allow read, write: if true;
+    }
+  }
+}

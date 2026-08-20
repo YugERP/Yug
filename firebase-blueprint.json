@@ -1,0 +1,284 @@
+{
+  "entities": {
+    "School": {
+      "title": "School",
+      "description": "Represents a school registered in the system.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "createdAt"]
+    },
+    "User": {
+      "title": "User",
+      "description": "General user entity for admin and clerk roles.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "password": { "type": "string" },
+        "role": { "type": "string", "enum": ["MASTER_ADMIN", "ADMIN", "CLERK"] },
+        "schoolId": { "type": "string" }
+      },
+      "required": ["id", "name", "email", "role"]
+    },
+    "Student": {
+      "title": "Student",
+      "description": "Student entity containing school and educational profiles.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "password": { "type": "string" },
+        "role": { "type": "string", "enum": ["STUDENT"] },
+        "grade": { "type": "string" },
+        "rollNo": { "type": "string" },
+        "academicSession": { "type": "string" },
+        "feeBalance": { "type": "number" },
+        "fatherName": { "type": "string" },
+        "motherName": { "type": "string" },
+        "dob": { "type": "string" },
+        "hasPreviousClass": { "type": "boolean" },
+        "previousClass": { "type": "string" },
+        "gender": { "type": "string", "enum": ["Male", "Female", "Other", ""] },
+        "mobile": { "type": "string" },
+        "aadhar": { "type": "string" },
+        "address": { "type": "string" },
+        "photoUrl": { "type": "string" },
+        "stream": { "type": "string", "enum": ["Arts", "Science", "Commerce", "None", ""] },
+        "subjects": { "type": "array" },
+        "previousDues": { "type": "number" },
+        "schoolId": { "type": "string" }
+      },
+      "required": ["id", "name", "email", "role", "grade", "rollNo", "schoolId"]
+    },
+    "Teacher": {
+      "title": "Teacher",
+      "description": "Teacher entity holding teaching schedule and subjects.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "password": { "type": "string" },
+        "role": { "type": "string", "enum": ["TEACHER"] },
+        "subjects": { "type": "array" },
+        "schoolId": { "type": "string" }
+      },
+      "required": ["id", "name", "email", "role", "subjects", "schoolId"]
+    },
+    "Homework": {
+      "title": "Homework",
+      "description": "Assigned homework by teachers to grades.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "schoolId": { "type": "string" },
+        "teacherId": { "type": "string" },
+        "grade": { "type": "string" },
+        "subject": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "schoolId", "teacherId", "grade", "subject", "title", "description", "date"]
+    },
+    "ExamMark": {
+      "title": "ExamMark",
+      "description": "Obtained test and exam results for students.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "schoolId": { "type": "string" },
+        "studentId": { "type": "string" },
+        "teacherId": { "type": "string" },
+        "examType": { "type": "string", "enum": ["Half-Yearly Test", "Half-Yearly Exam", "Yearly Test", "Yearly Exam"] },
+        "subject": { "type": "string" },
+        "marksObtained": { "type": "number" },
+        "maxMarks": { "type": "number" },
+        "date": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "schoolId", "studentId", "teacherId", "examType", "subject", "marksObtained", "maxMarks", "date"]
+    },
+    "FeeRecord": {
+      "title": "FeeRecord",
+      "description": "Payment or charge details relating to a student.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "schoolId": { "type": "string" },
+        "studentId": { "type": "string" },
+        "amount": { "type": "number" },
+        "date": { "type": "string", "format": "date-time" },
+        "type": { "type": "string", "enum": ["Payment", "Charge"] },
+        "remarks": { "type": "string" }
+      },
+      "required": ["id", "schoolId", "studentId", "amount", "date", "type"]
+    },
+    "Issue": {
+      "title": "Issue",
+      "description": "Support tickets submitted by users.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "schoolId": { "type": "string" },
+        "fromUserId": { "type": "string" },
+        "fromUserName": { "type": "string" },
+        "fromUserRole": { "type": "string" },
+        "description": { "type": "string" },
+        "status": { "type": "string", "enum": ["Open", "Resolved"] },
+        "date": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "schoolId", "fromUserId", "fromUserName", "fromUserRole", "description", "status", "date"]
+    },
+    "ClassFee": {
+      "title": "ClassFee",
+      "description": "Fee schedules for grades per school.",
+      "type": "object",
+      "properties": {
+        "schoolId": { "type": "string" },
+        "fees": { "type": "object" }
+      },
+      "required": ["schoolId", "fees"]
+    },
+    "SchoolConfig": {
+      "title": "SchoolConfig",
+      "description": "Active sessions and academic configuration.",
+      "type": "object",
+      "properties": {
+        "schoolId": { "type": "string" },
+        "activeAcademicSession": { "type": "string" },
+        "academicSessions": { "type": "array" },
+        "allowedSessions": { "type": "array" }
+      },
+      "required": ["schoolId", "activeAcademicSession", "academicSessions", "allowedSessions"]
+    },
+    "SessionRequest": {
+      "title": "SessionRequest",
+      "description": "Request for a new academic session approval sent by school admins to the platforms super admin.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "schoolId": { "type": "string" },
+        "schoolName": { "type": "string" },
+        "session": { "type": "string" },
+        "status": { "type": "string", "enum": ["Pending", "Approved", "Rejected"] },
+        "requestedAt": { "type": "string", "format": "date-time" },
+        "requestedByEmail": { "type": "string" }
+      },
+      "required": ["id", "schoolId", "schoolName", "session", "status", "requestedAt", "requestedByEmail"]
+    },
+    "AttendanceRecord": {
+      "title": "AttendanceRecord",
+      "description": "Daily attendance record for students.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "schoolId": { "type": "string" },
+        "studentId": { "type": "string" },
+        "grade": { "type": "string" },
+        "date": { "type": "string" },
+        "status": { "type": "string", "enum": ["Present", "Absent", "Excused"] }
+      },
+      "required": ["id", "schoolId", "studentId", "grade", "date", "status"]
+    },
+    "NotificationLog": {
+      "title": "NotificationLog",
+      "description": "Communication log for messages sent to school contacts.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "schoolId": { "type": "string" },
+        "type": { "type": "string", "enum": ["SMS", "WhatsApp"] },
+        "recipientName": { "type": "string" },
+        "mobile": { "type": "string" },
+        "category": { "type": "string", "enum": ["Fee Alert", "Attendance", "Exam Result", "General Info"] },
+        "message": { "type": "string" },
+        "status": { "type": "string", "enum": ["Sent", "Delivered", "Failed"] },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "schoolId", "type", "recipientName", "mobile", "category", "message", "status", "timestamp"]
+    },
+    "AttendanceRequest": {
+      "title": "AttendanceRequest",
+      "description": "Correction requests for personal staff attendance.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "schoolId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userRole": { "type": "string", "enum": ["TEACHER", "CLERK"] },
+        "date": { "type": "string" },
+        "currentStatus": { "type": "string" },
+        "requestedStatus": { "type": "string", "enum": ["Present", "Absent", "Excused", "Leave"] },
+        "reason": { "type": "string" },
+        "status": { "type": "string", "enum": ["Pending", "Approved", "Rejected"] },
+        "requestedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "schoolId", "userId", "userName", "userRole", "date", "requestedStatus", "reason", "status", "requestedAt"]
+    }
+  },
+  "firestore": {
+    "/schools/{schoolId}": {
+      "schema": "School",
+      "description": "Registered schools."
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "System-wide users including admins and clerks."
+    },
+    "/students/{studentId}": {
+      "schema": "Student",
+      "description": "Information about school students."
+    },
+    "/teachers/{teacherId}": {
+      "schema": "Teacher",
+      "description": "Details about school teachers."
+    },
+    "/homeworks/{homeworkId}": {
+      "schema": "Homework",
+      "description": "Homework details."
+    },
+    "/marks/{markId}": {
+      "schema": "ExamMark",
+      "description": "Student marks database."
+    },
+    "/feeRecords/{feeRecordId}": {
+      "schema": "FeeRecord",
+      "description": "Financial accounting table for student fee payments."
+    },
+    "/issues/{issueId}": {
+      "schema": "Issue",
+      "description": "Support tickets / feedback board."
+    },
+    "/classFees/{schoolId}": {
+      "schema": "ClassFee",
+      "description": "Fees categorized by classes/grades per school."
+    },
+    "/schoolConfig/{schoolId}": {
+      "schema": "SchoolConfig",
+      "description": "Config parameters for schools relating to operational sessions."
+    },
+    "/sessionRequests/{requestId}": {
+      "schema": "SessionRequest",
+      "description": "Pending and historical academic session approval requests from school admins."
+    },
+    "/attendances/{attendanceId}": {
+      "schema": "AttendanceRecord",
+      "description": "Student attendance registry documents."
+    },
+    "/notificationLogs/{logId}": {
+      "schema": "NotificationLog",
+      "description": "Logs of outgoing SMS and WhatsApp notification attempts."
+    },
+    "/attendanceRequests/{requestId}": {
+      "schema": "AttendanceRequest",
+      "description": "Correction requests for personal staff attendance."
+    }
+  }
+}

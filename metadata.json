@@ -1,0 +1,6 @@
+{
+  "name": "EduManage - School Management System",
+  "description": "Comprehensive school management software featuring distinct panels for Admins, Teachers, Students, and Clerks. Covers homework, test/exam results, fee management, and support ticketing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
