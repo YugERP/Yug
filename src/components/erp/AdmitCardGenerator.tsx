@@ -288,15 +288,6 @@ export function AdmitCardGenerator() {
                 <span className="text-slate-800">:</span>
                 <span className="text-slate-950 text-xs font-black">{student.grade} {student.section ? `(Section ${student.section})` : ''}</span>
               </div>
-              {student.subjects && student.subjects.length > 0 && (
-                <div className="grid grid-cols-[82px_8px_1fr] items-start">
-                  <span className="text-slate-900 text-[11px] font-bold">SUBJECTS</span>
-                  <span className="text-slate-800">:</span>
-                  <span className="text-slate-900 text-[10px] font-bold leading-tight truncate">
-                    {student.subjects.join(', ')}
-                  </span>
-                </div>
-              )}
               <div className="grid grid-cols-[82px_8px_1fr] items-start">
                 <span className="text-slate-900 text-xs font-bold">ADDRESS</span>
                 <span className="text-slate-800">:</span>
