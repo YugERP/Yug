@@ -8,13 +8,13 @@ const CLASSES = ['Nursery', 'L.K.G', 'U.K.G', 'Class 1', 'Class 2', 'Class 3', '
 const SECTIONS = ['A', 'B', 'C', 'D'];
 const HOUSES = ['Ganga', 'Yamuna', 'Saraswati', 'Narmada'];
 const SUBJECT_OPTIONS = [
-  'Hindi', 'English', 'Mathematics', 'Science', 'Social Science', 'Sanskrit', 'Urdu',
-  'Physics', 'Chemistry', 'Biology', 'Accountancy', 'Business Studies', 'Economics',
+  'Hindi', 'English', 'Mathematics', 'Science', 'Social Science',
+  'G.K Moral', 'Reasoning', 'Drawing', 'P.T.',
+  'Sanskrit', 'Computer Science', 'Environmental Studies (EVS)', 'Urdu', 'Home Science',
+  'Physics', 'Chemistry', 'Biology', 'Commerce', 'Accountancy', 'Business Studies', 'Economics',
   'History', 'Geography', 'Political Science (Civics)', 'Sociology', 'Psychology',
-  'Education', 'Home Science', 'Computer Science', 'Agriculture', 'Drawing & Painting',
-  'Music (Vocal)', 'Music (Instrumental)', 'Physical Education', 'Philosophy',
-  'Arabic', 'Persian', 'Punjabi', 'Bengali', 'Marathi', 'Gujarati', 'Tamil',
-  'Telugu', 'Malayalam', 'Nepali', 'Pali'
+  'Education', 'Agriculture', 'Drawing & Painting', 'Music (Vocal)', 'Music (Instrumental)',
+  'Physical Education', 'Philosophy', 'Arabic', 'Persian', 'Punjabi', 'Bengali', 'Marathi', 'Gujarati'
 ];
 
 const UP_DISTRICTS = [
@@ -179,8 +179,8 @@ export function StudentRegistration({ onSuccess, onCancel, studentToEdit }: Stud
       medium: 'Hindi',
       
       stream: 'None',
-      subjects: ['Hindi', 'English', 'Mathematics', 'Science', 'Social Science'],
-      optionalSubject: 'Computer Science',
+      subjects: ['Hindi', 'English', 'Mathematics', 'Science', 'Social Science', 'Drawing', 'G.K Moral', 'Reasoning', 'P.T.'],
+      optionalSubject: '',
       examType: 'Regular',
       disabilityStatus: 'None',
       minorityStatus: 'No',
@@ -336,6 +336,46 @@ export function StudentRegistration({ onSuccess, onCancel, studentToEdit }: Stud
       setForm(prev => ({ ...prev, subjects: [...list, sub] }));
     } else {
       setForm(prev => ({ ...prev, subjects: list.filter(item => item !== sub) }));
+    }
+  };
+
+  const applyStreamPreset = (streamKey: string) => {
+    if (streamKey === 'Science (PCM)' || streamKey === 'Science') {
+      setForm(prev => ({
+        ...prev,
+        stream: 'Science (PCM)',
+        subjects: ['Hindi', 'English', 'Physics', 'Chemistry', 'Mathematics', 'P.T.']
+      }));
+    } else if (streamKey === 'Science (PCB)') {
+      setForm(prev => ({
+        ...prev,
+        stream: 'Science (PCB)',
+        subjects: ['Hindi', 'English', 'Physics', 'Chemistry', 'Biology', 'P.T.']
+      }));
+    } else if (streamKey === 'Commerce') {
+      setForm(prev => ({
+        ...prev,
+        stream: 'Commerce',
+        subjects: ['Hindi', 'English', 'Accountancy', 'Business Studies', 'Economics', 'P.T.']
+      }));
+    } else if (streamKey === 'Arts' || streamKey === 'Humanities') {
+      setForm(prev => ({
+        ...prev,
+        stream: 'Arts',
+        subjects: ['Hindi', 'English', 'History', 'Geography', 'Political Science (Civics)', 'P.T.']
+      }));
+    } else if (streamKey === 'HighSchool') {
+      setForm(prev => ({
+        ...prev,
+        stream: 'None',
+        subjects: ['Hindi', 'English', 'Mathematics', 'Science', 'Social Science', 'Drawing', 'P.T.']
+      }));
+    } else if (streamKey === 'Primary') {
+      setForm(prev => ({
+        ...prev,
+        stream: 'None',
+        subjects: ['Hindi', 'English', 'Mathematics', 'Science', 'Social Science', 'Drawing', 'G.K Moral', 'Reasoning', 'P.T.']
+      }));
     }
   };
 
@@ -519,8 +559,29 @@ export function StudentRegistration({ onSuccess, onCancel, studentToEdit }: Stud
               <div>
                 <Label>Class / Grade <span className="text-rose-500">*</span></Label>
                 <Input as="select" required value={form.grade || ''} onChange={e => {
-                  setForm(prev => ({ ...prev, grade: e.target.value }));
-                  autofillNumbers(e.target.value);
+                  const selGrade = e.target.value;
+                  setForm(prev => {
+                    let updatedStream = prev.stream;
+                    let updatedSubjects = prev.subjects;
+                    if (['Class 11', 'Class 12', '11th', '12th'].includes(selGrade)) {
+                      if (!updatedStream || updatedStream === 'None') {
+                        updatedStream = 'Science (PCM)';
+                        updatedSubjects = ['Hindi', 'English', 'Physics', 'Chemistry', 'Mathematics', 'P.T.'];
+                      }
+                    } else if (['Class 9', 'Class 10', '9th', '10th'].includes(selGrade)) {
+                      if (!updatedStream || updatedStream.includes('Science')) {
+                        updatedStream = 'None';
+                        updatedSubjects = ['Hindi', 'English', 'Mathematics', 'Science', 'Social Science', 'Drawing', 'P.T.'];
+                      }
+                    } else if (selGrade) {
+                      if (!prev.subjects || prev.subjects.length <= 5) {
+                        updatedStream = 'None';
+                        updatedSubjects = ['Hindi', 'English', 'Mathematics', 'Science', 'Social Science', 'Drawing', 'G.K Moral', 'Reasoning', 'P.T.'];
+                      }
+                    }
+                    return { ...prev, grade: selGrade, stream: updatedStream, subjects: updatedSubjects };
+                  });
+                  autofillNumbers(selGrade);
                 }}>
                   <option value="">Select...</option>
                   {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
@@ -852,35 +913,150 @@ export function StudentRegistration({ onSuccess, onCancel, studentToEdit }: Stud
                 </Input>
               </div>
               <div>
-                <Label>Required Stream (Class 9-12)</Label>
-                <Input as="select" value={form.stream || 'None'} onChange={e => setForm({...form, stream: e.target.value as any})}>
-                  <option value="None">None (Nursery-8)</option>
-                  <option value="Science">Science (PCM/PCB)</option>
-                  <option value="Arts">Humanities (Arts)</option>
-                  <option value="Commerce">Commerce</option>
+                <Label>Stream / Group (कक्षा 11-12 एवं 9-10 हेतु)</Label>
+                <Input as="select" value={form.stream || 'None'} onChange={e => {
+                  const val = e.target.value;
+                  setForm(prev => ({ ...prev, stream: val as any }));
+                  applyStreamPreset(val);
+                }}>
+                  <option value="None">None / General (Nursery - Class 8)</option>
+                  <option value="HighSchool">Class 9 & 10: High School (6 Subjects)</option>
+                  <option value="Science (PCM)">Class 11 & 12: Science (PCM - Physics, Chemistry, Maths)</option>
+                  <option value="Science (PCB)">Class 11 & 12: Science (PCB - Physics, Chemistry, Biology)</option>
+                  <option value="Commerce">Class 11 & 12: Commerce (Accounts, BST, Eco)</option>
+                  <option value="Arts">Class 11 & 12: Humanities / Arts (History, Geo, Civics)</option>
                 </Input>
               </div>
             </div>
 
             {/* Subject Choices */}
-            <div className="p-3 border rounded bg-white">
-              <span className="text-[10px] font-bold text-indigo-700 uppercase block mb-2">Subject Roll Combination</span>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                {SUBJECT_OPTIONS.map(sub => (
-                  <label key={sub} className="flex items-center space-x-2 text-xs bg-slate-50 px-2 py-1.5 rounded hover:bg-indigo-50/50 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={(form.subjects || []).includes(sub)}
-                      onChange={e => handleSubjectToggle(sub, e.target.checked)}
-                      className="rounded"
-                    />
-                    <span>{sub}</span>
-                  </label>
-                ))}
+            <div className="p-3 border rounded bg-white space-y-3">
+              <div className="flex flex-wrap justify-between items-center gap-2 border-b pb-2">
+                <div>
+                  <span className="text-xs font-black text-indigo-900 uppercase block flex items-center gap-1.5">
+                    विषय चयन सूची / Subject Combination ({form.subjects?.length || 0} विषय चयनित)
+                  </span>
+                  <p className="text-[10px] text-slate-500 font-medium mt-0.5">
+                    * आप जो भी विषय चुनेंगे, मार्कशीट और परीक्षा परिणाम उन्हीं विषयों का बनेगा। (कक्षा 11-12 में P.T. केवल ग्रेडिंग हेतु रहता है)
+                  </p>
+                </div>
+
+                {/* Quick Presets */}
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => applyStreamPreset('Science (PCM)')}
+                    className={`text-[10px] px-2.5 py-1 rounded border font-bold transition-all ${
+                      form.stream === 'Science (PCM)' ? 'bg-indigo-600 text-white border-indigo-700 shadow-2xs' : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border-indigo-200'
+                    }`}
+                  >
+                    🔬 Science (PCM)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyStreamPreset('Science (PCB)')}
+                    className={`text-[10px] px-2.5 py-1 rounded border font-bold transition-all ${
+                      form.stream === 'Science (PCB)' ? 'bg-teal-600 text-white border-teal-700 shadow-2xs' : 'bg-teal-50 text-teal-700 hover:bg-teal-100 border-teal-200'
+                    }`}
+                  >
+                    🧬 Science (PCB)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyStreamPreset('Commerce')}
+                    className={`text-[10px] px-2.5 py-1 rounded border font-bold transition-all ${
+                      form.stream === 'Commerce' ? 'bg-amber-600 text-white border-amber-700 shadow-2xs' : 'bg-amber-50 text-amber-800 hover:bg-amber-100 border-amber-200'
+                    }`}
+                  >
+                    📊 Commerce
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyStreamPreset('Arts')}
+                    className={`text-[10px] px-2.5 py-1 rounded border font-bold transition-all ${
+                      form.stream === 'Arts' ? 'bg-purple-600 text-white border-purple-700 shadow-2xs' : 'bg-purple-50 text-purple-700 hover:bg-purple-100 border-purple-200'
+                    }`}
+                  >
+                    🎨 Arts (Humanities)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyStreamPreset('Primary')}
+                    className="text-[10px] bg-slate-100 text-slate-700 hover:bg-slate-200 px-2 py-1 rounded border border-slate-300 font-medium transition-all"
+                  >
+                    🎒 All 9 (1st-8th)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setForm(prev => ({ ...prev, subjects: [] }))}
+                    className="text-[10px] bg-rose-50 text-rose-700 hover:bg-rose-100 px-2 py-1 rounded border border-rose-200 font-medium transition-all"
+                  >
+                    Clear All
+                  </button>
+                </div>
               </div>
-              <div className="mt-3">
-                <Label>Primary Optional / 6th Subject</Label>
-                <Input value={form.optionalSubject || ''} onChange={e => setForm({...form, optionalSubject: e.target.value})} placeholder="e.g. Sanskrit or Computer Science" />
+
+              {/* Subject Badges / Checkboxes */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 max-h-72 overflow-y-auto p-1">
+                {SUBJECT_OPTIONS.map(sub => {
+                  const isChecked = (form.subjects || []).includes(sub);
+                  return (
+                    <label 
+                      key={sub} 
+                      className={`flex items-center space-x-2 text-xs px-2.5 py-1.5 rounded-lg cursor-pointer border transition-all select-none ${
+                        isChecked 
+                          ? 'bg-indigo-50 border-indigo-400 text-indigo-900 font-bold shadow-2xs ring-1 ring-indigo-300' 
+                          : 'bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-700 font-normal'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={e => handleSubjectToggle(sub, e.target.checked)}
+                        className="rounded text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5"
+                      />
+                      <span className="truncate">{sub}</span>
+                    </label>
+                  );
+                })}
+              </div>
+
+              {/* Custom Subject Adder */}
+              <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-2">
+                <span className="text-[11px] font-bold text-slate-600">नया विषय जोड़ें (Custom Subject):</span>
+                <input
+                  type="text"
+                  placeholder="विषय का नाम टाइप करें..."
+                  id="customSubjectInput"
+                  className="text-xs border border-slate-300 rounded-md px-2.5 py-1 min-w-[200px] flex-1 focus:outline-none focus:border-indigo-500 bg-white"
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const input = e.currentTarget;
+                      const val = input.value.trim();
+                      if (val && !(form.subjects || []).includes(val)) {
+                        setForm(prev => ({ ...prev, subjects: [...(prev.subjects || []), val] }));
+                        input.value = '';
+                      }
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const input = document.getElementById('customSubjectInput') as HTMLInputElement;
+                    if (input && input.value.trim()) {
+                      const val = input.value.trim();
+                      if (!(form.subjects || []).includes(val)) {
+                        setForm(prev => ({ ...prev, subjects: [...(prev.subjects || []), val] }));
+                        input.value = '';
+                      }
+                    }
+                  }}
+                  className="text-xs bg-indigo-600 text-white px-3 py-1 rounded-md font-bold hover:bg-indigo-700 transition-all cursor-pointer shadow-2xs"
+                >
+                  + Add Subject
+                </button>
               </div>
             </div>
 

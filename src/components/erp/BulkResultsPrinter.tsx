@@ -84,8 +84,8 @@ function ReportCardPrintSheet({ student, selectedTemplate = 'classic_portrait' }
   const studentMarks = marks.filter(m => m.studentId === student.id);
 
   const defaultSubjects = [
-    'Hindi', 'Mathematics', 'English', 'Social Science', 'Science', 
-    'Drawing', 'Sanskrit', 'Computer', 'G.K/Moral Science'
+    'Hindi', 'English', 'Mathematics', 'Science', 'Social Science', 
+    'Drawing', 'G.K Moral', 'Reasoning', 'P.T.', 'Sanskrit', 'Computer Science'
   ];
   
   const studentSubjects = student.subjects && student.subjects.length > 0 
@@ -125,7 +125,10 @@ function ReportCardPrintSheet({ student, selectedTemplate = 'classic_portrait' }
   let totalFinalMax = 0;
   let totalFinalObt = 0;
 
+  const isSeniorGrade = ['Class 11', 'Class 12', '11th', '12th', '11', '12'].some(c => (student.grade || '').toLowerCase().includes(c.toLowerCase()));
+
   const subjectRows = studentSubjects.map(subject => {
+    const isGradingOnly = isSeniorGrade && ['p.t.', 'p.t', 'physical education', 'pt', 'games', 'physical & health education'].includes(subject.toLowerCase().trim());
     const hyTest = studentMarks.find(m => m.subject.toLowerCase() === subject.toLowerCase() && m.examType === 'Half-Yearly Test');
     const hyExam = studentMarks.find(m => m.subject.toLowerCase() === subject.toLowerCase() && m.examType === 'Half-Yearly Exam');
     const yTest = studentMarks.find(m => m.subject.toLowerCase() === subject.toLowerCase() && m.examType === 'Yearly Test');
@@ -157,23 +160,26 @@ function ReportCardPrintSheet({ student, selectedTemplate = 'classic_portrait' }
     const percentage = finalMax > 0 ? (finalObt / finalMax) * 100 : 0;
     const grade = hasAny ? getGradeFromPercentage(percentage) : '';
 
-    if (hasHy) {
-      totalHyTestObt += hyTestVal;
-      totalHyExamObt += hyExamVal;
-      totalHyMax += hyMax;
-      totalHyObt += hyObt;
+    if (!isGradingOnly) {
+      if (hasHy) {
+        totalHyTestObt += hyTestVal;
+        totalHyExamObt += hyExamVal;
+        totalHyMax += hyMax;
+        totalHyObt += hyObt;
+      }
+      if (hasY) {
+        totalYTestObt += yTestVal;
+        totalYExamObt += yExamVal;
+        totalYMax += yMax;
+        totalYObt += yObt;
+      }
+      totalFinalMax += finalMax;
+      totalFinalObt += finalObt;
     }
-    if (hasY) {
-      totalYTestObt += yTestVal;
-      totalYExamObt += yExamVal;
-      totalYMax += yMax;
-      totalYObt += yObt;
-    }
-    totalFinalMax += finalMax;
-    totalFinalObt += finalObt;
 
     return {
       subject,
+      isGradingOnly,
       hasHy,
       hasY,
       hasAny,
@@ -216,9 +222,13 @@ function ReportCardPrintSheet({ student, selectedTemplate = 'classic_portrait' }
   })();
 
   const studentAttendance = attendances.filter(a => a.studentId === student.id || a.userId === student.id);
-  const totalPresent = student.reportCardPresentDays ?? studentAttendance.filter(a => a.status === 'Present').length;
-  const totalDays = student.reportCardTotalDays ?? studentAttendance.length;
-  const attendanceString = totalDays > 0 ? `${totalPresent} / ${totalDays}` : '194 / 220';
+  const totalPresent = (student.reportCardPresentDays !== undefined && student.reportCardPresentDays !== null)
+    ? student.reportCardPresentDays
+    : (studentAttendance.length > 0 ? studentAttendance.filter(a => a.status === 'Present').length : 194);
+  const totalDays = (student.reportCardTotalDays !== undefined && student.reportCardTotalDays !== null)
+    ? student.reportCardTotalDays
+    : (studentAttendance.length > 0 ? studentAttendance.length : 220);
+  const attendanceString = `${totalPresent} / ${totalDays}`;
 
   const displayVal = (exists: boolean, val: number) => exists ? val : '';
 

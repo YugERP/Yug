@@ -132,7 +132,7 @@ export interface Student extends User {
   penNo?: string;
 
   // 6. Academic & UP Board Related Fields
-  stream?: 'Arts' | 'Science' | 'Commerce' | 'None' | '';
+  stream?: 'Arts' | 'Science' | 'Science (PCM)' | 'Science (PCB)' | 'Commerce' | 'None' | string;
   subjects?: string[];
   optionalSubject?: string;
   examType?: 'Regular' | 'Private' | '';

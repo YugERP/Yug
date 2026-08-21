@@ -393,8 +393,8 @@ export function AdmissionSlips({ initialStudent = null, onEdit }: AdmissionSlips
                 <div className="mt-4 p-2 bg-slate-50 border rounded text-[11px] grid grid-cols-2 items-center">
                   <p className="font-black text-indigo-800 uppercase tracking-wider text-[9px]">Registered Stream / Subjects:</p>
                   <p className="font-bold text-slate-800 justify-self-end text-right">
-                     {selectedStudent.stream && selectedStudent.stream !== 'None' ? selectedStudent.stream : 'General Stream / Subjects'} 
-                     {selectedStudent.optionalSubject ? ` | Opt: ${selectedStudent.optionalSubject}` : ''}
+                     {selectedStudent.stream && selectedStudent.stream !== 'None' ? selectedStudent.stream : 'General Stream'} 
+                     {selectedStudent.subjects && selectedStudent.subjects.length > 0 ? ` (${selectedStudent.subjects.join(', ')})` : ''}
                   </p>
                 </div>
               )}

@@ -437,7 +437,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const updateStudent = async (studentId: string, updates: Partial<Student>) => {
     try {
-      await updateDoc(doc(db, 'students', studentId), updates);
+      // Optimistic local state update for instant UI responsiveness
+      setStudents(prev => prev.map(s => s.id === studentId ? { ...s, ...updates } : s));
+
+      // Clean undefined values before updating Firestore
+      const cleanUpdates: Record<string, any> = {};
+      Object.entries(updates).forEach(([key, value]) => {
+        if (value !== undefined) {
+          cleanUpdates[key] = value;
+        }
+      });
+
+      if (Object.keys(cleanUpdates).length > 0) {
+        await updateDoc(doc(db, 'students', studentId), cleanUpdates);
+      }
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `students/${studentId}`);
     }
