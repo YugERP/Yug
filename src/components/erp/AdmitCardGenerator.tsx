@@ -7,6 +7,7 @@ import { normalizeGrade, isSameGrade, ALL_STANDARD_CLASSES } from '../../utils/g
 
 export function AdmitCardGenerator() {
   const { students, schools, currentUser, activeAcademicSession } = useStore();
+  const [selectedSession, setSelectedSession] = useState<string>('All');
   const [selectedClass, setSelectedClass] = useState('');
   const [examType, setExamType] = useState('Half Yearly');
   const [singleStudentId, setSingleStudentId] = useState('');
@@ -106,11 +107,20 @@ export function AdmitCardGenerator() {
     localStorage.setItem('sch_custom_admit_card_hide_border', val.toString());
   };
 
-  // Filter students by active school and academic session (resilient to allow all imported and existing students)
+  // Collect available academic sessions from students and system config
+  const availableSessions = Array.from(new Set([
+    'All',
+    ...(activeAcademicSession ? [activeAcademicSession] : []),
+    ...(students.map(s => s.academicSession).filter(Boolean) as string[]),
+    '2025-26',
+    '2026-27'
+  ]));
+
+  // Filter students by active school and academic session (defaults to All Sessions so all imported students show immediately)
   const activeStudents = students.filter(s => {
     if (s.isDeleted) return false;
     const matchesSchool = !currentUser?.schoolId || !s.schoolId || s.schoolId === currentUser?.schoolId;
-    const matchesSession = !activeAcademicSession || !s.academicSession || s.academicSession === activeAcademicSession;
+    const matchesSession = selectedSession === 'All' || !selectedSession || !s.academicSession || s.academicSession === selectedSession;
     return matchesSchool && matchesSession;
   });
 
@@ -435,6 +445,19 @@ export function AdmitCardGenerator() {
           <div className="space-y-3 pt-1">
             <div className="grid grid-cols-2 gap-2.5">
               <div>
+                <Label>Academic Session</Label>
+                <Input as="select" value={selectedSession} onChange={e => {
+                  setSelectedSession(e.target.value);
+                  setSingleStudentId('');
+                }}>
+                  {availableSessions.map(ses => (
+                    <option key={ses} value={ses}>
+                      {ses === 'All' ? 'All Sessions (सभी सत्र)' : ses}
+                    </option>
+                  ))}
+                </Input>
+              </div>
+              <div>
                 <Label>Starting Roll No</Label>
                 <Input 
                   type="number" 
@@ -443,6 +466,9 @@ export function AdmitCardGenerator() {
                   onChange={e => setStartingExamRollNo(e.target.value)} 
                 />
               </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5">
               <div>
                 <Label>Exam Type</Label>
                 <Input as="select" value={examType} onChange={e => setExamType(e.target.value as any)}>
@@ -453,29 +479,6 @@ export function AdmitCardGenerator() {
                   <option value="Unit Test">Unit Test</option>
                 </Input>
               </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2.5">
-              <div>
-                <Label>Select Class <span className="text-rose-500">*</span></Label>
-                <Input as="select" value={selectedClass} onChange={e => {
-                  const cls = e.target.value;
-                  setSelectedClass(cls);
-                  setSingleStudentId('');
-                  setSelectedStudentIds(sortedStudentsGlobal.filter(s => isSameGrade(s.grade, cls) || s.grade === cls).map(s => s.id));
-                }}>
-                  <option value="">-- Choose Class --</option>
-                  {classGroups.map(cls => {
-                    const stCount = activeStudents.filter(s => isSameGrade(s.grade, cls) || s.grade === cls).length;
-                    const label = cls.startsWith('Class') || cls === 'Nursery' || cls === 'L.K.G' || cls === 'U.K.G' ? cls : `Class ${cls}`;
-                    return (
-                      <option key={cls} value={cls}>
-                        {label} {stCount > 0 ? `(${stCount} Students)` : ''}
-                      </option>
-                    );
-                  })}
-                </Input>
-              </div>
               <div>
                 <Label>Print Layout</Label>
                 <Input as="select" value={printLayout} onChange={e => setPrintLayout(e.target.value as any)}>
@@ -483,6 +486,27 @@ export function AdmitCardGenerator() {
                   <option value="portrait">Portrait</option>
                 </Input>
               </div>
+            </div>
+
+            <div>
+              <Label>Select Class <span className="text-rose-500">*</span></Label>
+              <Input as="select" value={selectedClass} onChange={e => {
+                const cls = e.target.value;
+                setSelectedClass(cls);
+                setSingleStudentId('');
+                setSelectedStudentIds(sortedStudentsGlobal.filter(s => isSameGrade(s.grade, cls) || s.grade === cls).map(s => s.id));
+              }}>
+                <option value="">-- Choose Class --</option>
+                {classGroups.map(cls => {
+                  const stCount = activeStudents.filter(s => isSameGrade(s.grade, cls) || s.grade === cls).length;
+                  const label = cls.startsWith('Class') || cls === 'Nursery' || cls === 'L.K.G' || cls === 'U.K.G' ? cls : `Class ${cls}`;
+                  return (
+                    <option key={cls} value={cls}>
+                      {label} {stCount > 0 ? `(${stCount} Students)` : ''}
+                    </option>
+                  );
+                })}
+              </Input>
             </div>
 
             {selectedClass && filteredStudents.length > 0 && (

@@ -389,7 +389,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const allowedSessions = currentSchoolConfig.allowedSessions;
 
   const filteredUsers = isAdminPanel ? users : users.filter(u => u.schoolId === effectiveSchoolId);
-  const rawSchoolStudents = isAdminPanel ? students : students.filter(s => s.schoolId === effectiveSchoolId);
+  const rawSchoolStudents = isAdminPanel ? students : students.filter(s => !effectiveSchoolId || !s.schoolId || s.schoolId === effectiveSchoolId);
   const activeSchoolStudents = rawSchoolStudents.filter(s => !s.isDeleted);
   const deletedSchoolStudents = rawSchoolStudents.filter(s => s.isDeleted);
   const filteredStudents = activeSchoolStudents.map(s => {
@@ -606,8 +606,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const importStudents = async (newStudents: Student[]) => {
     try {
-      for (const s of newStudents) {
-        await setDoc(doc(db, 'students', s.id), { ...s, schoolId: effectiveSchoolId });
+      const targetSchoolId = effectiveSchoolId || currentUser?.schoolId || '';
+      const studentsWithMeta = newStudents.map(s => ({
+        ...s,
+        schoolId: s.schoolId || targetSchoolId,
+        academicSession: s.academicSession || activeAcademicSession || '2025-26',
+        isDeleted: false
+      }));
+
+      // Optimistically update local React state immediately so UI refreshes without delay
+      setStudents(prev => {
+        const existingIds = new Set(prev.map(p => p.id));
+        const filteredNew = studentsWithMeta.filter(ns => !existingIds.has(ns.id));
+        return [...prev, ...filteredNew];
+      });
+
+      for (const s of studentsWithMeta) {
+        await setDoc(doc(db, 'students', s.id), s);
       }
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, 'students/import');
@@ -776,17 +791,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const importMarks = async (newMarks: Omit<ExamMark, 'id' | 'date' | 'schoolId'>[]) => {
     try {
+      const targetSchoolId = effectiveSchoolId || currentUser?.schoolId || '';
+      const marksToSave: ExamMark[] = newMarks.map((m, idx) => ({
+        ...m,
+        id: `m_${Date.now()}_${idx}_${Math.random().toString().slice(2, 6)}`,
+        schoolId: targetSchoolId,
+        date: new Date().toISOString()
+      }));
+
+      setMarks(prev => [...prev, ...marksToSave]);
+
       const batchList = [];
-      for (const m of newMarks) {
-        const id = `m${Date.now()}_${Math.random().toString().slice(2, 6)}`;
-        batchList.push(
-          setDoc(doc(db, 'marks', id), {
-            ...m,
-            id,
-            schoolId: effectiveSchoolId,
-            date: new Date().toISOString()
-          })
-        );
+      for (const mark of marksToSave) {
+        batchList.push(setDoc(doc(db, 'marks', mark.id), mark));
       }
       await Promise.all(batchList);
     } catch (err) {
