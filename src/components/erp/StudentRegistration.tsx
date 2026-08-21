@@ -230,8 +230,8 @@ export function StudentRegistration({ onSuccess, onCancel, studentToEdit }: Stud
     const file = e.target.files?.[0];
     if (file) {
       if (field === 'docStudentPhoto') {
-        if (file.size < 5 * 1024 || file.size > 25 * 1024) {
-          alert("Photo size must be between 5KB and 25KB.");
+        if (file.size < 2 * 1024 || file.size > 80 * 1024) {
+          alert("फोटो का साइज़ 2KB से 80KB के बीच होना चाहिए (Photo size must be between 2KB and 80KB).");
           e.target.value = '';
           return;
         }
@@ -250,7 +250,7 @@ export function StudentRegistration({ onSuccess, onCancel, studentToEdit }: Stud
             let width = img.width;
             let height = img.height;
             
-            const MAX_DIMENSION = 400; // Resize to max 400px
+            const MAX_DIMENSION = 600; // Resize to max 600px for crisp photo quality
             if (width > height && width > MAX_DIMENSION) {
               height *= MAX_DIMENSION / width;
               width = MAX_DIMENSION;
@@ -264,16 +264,16 @@ export function StudentRegistration({ onSuccess, onCancel, studentToEdit }: Stud
             const ctx = canvas.getContext('2d');
             if (ctx) {
               ctx.drawImage(img, 0, 0, width, height);
-              let quality = 0.9;
+              let quality = 0.92;
               let dataUrl = canvas.toDataURL('image/jpeg', quality);
               
-              while (dataUrl.length > 20 * 1024 && quality > 0.1) {
-                quality -= 0.1;
+              while (dataUrl.length > 78 * 1024 && quality > 0.15) {
+                quality -= 0.08;
                 dataUrl = canvas.toDataURL('image/jpeg', quality);
               }
 
-              if (dataUrl.length > 21 * 1024) {  // Allowing slightly more due to base64 overhead, but max 20kb text size basically
-                 alert('Could not compress image below 20KB. Please upload a smaller image.');
+              if (dataUrl.length > 82 * 1024) {
+                 alert('Could not compress image below 80KB. Please upload a smaller image.');
                  e.target.value = '';
                  return;
               }
@@ -284,8 +284,8 @@ export function StudentRegistration({ onSuccess, onCancel, studentToEdit }: Stud
         };
         reader.readAsDataURL(file);
       } else {
-        if (file.size > 20 * 1024) {
-           alert("File size must not exceed 20KB.");
+        if (file.size > 80 * 1024) {
+           alert("File size must not exceed 80KB.");
            e.target.value = '';
            return;
         }
@@ -1083,7 +1083,7 @@ export function StudentRegistration({ onSuccess, onCancel, studentToEdit }: Stud
               <div className="border p-3 rounded bg-white space-y-2">
                 <span className="text-[10px] uppercase font-semibold text-indigo-700 block">Student Photograph</span>
                 <div>
-                  <Label>Student Passport size Photograph <span className="text-rose-500">*</span> <span className="text-[10px] text-slate-400 font-normal ml-1">(Size: 5KB to 25KB)</span></Label>
+                  <Label>Student Passport size Photograph <span className="text-rose-500">*</span> <span className="text-[10px] text-slate-500 font-semibold ml-1">(Size: Max 70KB - 80KB)</span></Label>
                   <input type="file" accept="image/*" onChange={e => handleFileChange('docStudentPhoto', e)} className="text-xs file:bg-slate-100 file:border-0 hover:file:bg-slate-200" />
                   {form.docStudentPhoto && <img src={form.docStudentPhoto} alt="Preview" className="w-16 h-20 mt-1 object-cover border rounded" />}
                 </div>

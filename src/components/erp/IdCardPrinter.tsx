@@ -4,6 +4,7 @@ import { Card, Button, Label, Input } from '../UI';
 import { type Student, type School } from '../../types';
 import { Printer, Search, CreditCard, LayoutTemplate, Users, User } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
+import { isSameGrade, normalizeGrade, ALL_STANDARD_CLASSES } from '../../utils/gradeHelper';
 
 // ---------------------------------------------------------
 // TEMPLATES
@@ -194,12 +195,14 @@ export function IdCardPrinter() {
   const [printMode, setPrintMode] = useState<'single' | 'bulk'>('single');
   const [selectedTemplate, setSelectedTemplate] = useState<'modern_blue' | 'classic_duo'>('modern_blue');
 
-  const classes = ['Nursery', 'L.K.G', 'U.K.G', 'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5', 'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10', 'Class 11', 'Class 12'];
+  const existingGrades = Array.from(new Set(students.filter(s => !s.isDeleted).map(s => normalizeGrade(s.grade))));
+  const classes = Array.from(new Set([...ALL_STANDARD_CLASSES, ...existingGrades]));
 
-  const classStudents = students.filter(s => s.grade === selectedClass);
+  const classStudents = students.filter(s => !s.isDeleted && (s.grade === selectedClass || isSameGrade(s.grade, selectedClass)));
   const filteredStudents = classStudents.filter(s => 
-    s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (s.srNo?.includes(searchTerm))
+    (s.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (s.srNo && s.srNo.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (s.rollNo && String(s.rollNo).includes(searchTerm))
   );
 
   const selectedStudent = students.find(s => s.id === selectedStudentId);

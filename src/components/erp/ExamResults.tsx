@@ -3,6 +3,7 @@ import { useStore } from '../../store';
 import { Card, Button, Label, Input } from '../UI';
 import { type Student, type ExamType, type ExamMark } from '../../types';
 import { Award, CheckCircle, Search, Save, Calendar, CheckSquare, Sparkles, TrendingUp, Users } from 'lucide-react';
+import { normalizeGrade, isSameGrade, getDefaultSubjectsForGrade, ALL_STANDARD_CLASSES } from '../../utils/gradeHelper';
 
 export function ExamResults() {
   const { students, marks, addMark, updateStudent } = useStore();
@@ -11,17 +12,18 @@ export function ExamResults() {
   const [examType, setExamType] = useState<ExamType>('Half-Yearly Test');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const classStudents = students.filter(s => s.grade === selectedClass);
+  const classStudents = students.filter(s => !s.isDeleted && (s.grade === selectedClass || isSameGrade(s.grade, selectedClass)));
   const filteredStudents = classStudents.filter(s => 
-    s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (s.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
     (s.rollNo && String(s.rollNo).includes(searchQuery)) ||
     (s.srNo && s.srNo.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
-  // Dynamically compile subjects based on student enrollment choices
+  // Dynamically compile subjects based on class standards and student enrollment choices
   const classSubjectsSet = new Set<string>();
+  getDefaultSubjectsForGrade(selectedClass).forEach(sub => classSubjectsSet.add(sub));
   classStudents.forEach(st => {
-    if (st.subjects) {
+    if (st.subjects && Array.isArray(st.subjects)) {
       st.subjects.forEach(sub => classSubjectsSet.add(sub));
     }
     if (st.optionalSubject) {
@@ -30,7 +32,7 @@ export function ExamResults() {
   });
   
   const subjects = classSubjectsSet.size > 0 
-    ? Array.from(classSubjectsSet).sort() 
+    ? Array.from(classSubjectsSet)
     : ['Hindi', 'English', 'Mathematics', 'Science', 'Social Science', 'Drawing', 'G.K Moral', 'Reasoning', 'P.T.', 'Sanskrit', 'Computer Science', 'Urdu', 'Home Science'];
 
   const [subject, setSubject] = useState(subjects[0] || 'Hindi');
@@ -52,7 +54,8 @@ export function ExamResults() {
   const [isAttendanceSaved, setIsAttendanceSaved] = useState(false);
   const [attendanceSaving, setAttendanceSaving] = useState(false);
 
-  const classes = ['Nursery', 'L.K.G', 'U.K.G', 'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5', 'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10', 'Class 11', 'Class 12'];
+  const existingGrades = Array.from(new Set(students.filter(s => !s.isDeleted).map(s => normalizeGrade(s.grade))));
+  const classes = Array.from(new Set([...ALL_STANDARD_CLASSES, ...existingGrades]));
   const examTypes: ExamType[] = ['Half-Yearly Test', 'Half-Yearly Exam', 'Yearly Test', 'Yearly Exam'];
 
   // Helper getters for marks

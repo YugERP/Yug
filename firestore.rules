@@ -67,5 +67,13 @@ service cloud.firestore {
     match /parentAccounts/{parentId} {
       allow read, write: if true;
     }
+
+    match /school_backups/{backupId} {
+      allow read, write: if true;
+    }
+
+    match /test-connection-doc/{docId} {
+      allow read, write: if true;
+    }
   }
 }

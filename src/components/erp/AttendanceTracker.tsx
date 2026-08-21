@@ -3,6 +3,7 @@ import { useStore } from '../../store';
 import { Card, Button, Label, Input } from '../UI';
 import { type Student, type AttendanceRecord } from '../../types';
 import { Check, X, ShieldAlert, Sparkles, Calendar, Search, Printer, Download } from 'lucide-react';
+import { isSameGrade, normalizeGrade, ALL_STANDARD_CLASSES } from '../../utils/gradeHelper';
 
 export function AttendanceTracker() {
   const { currentUser, students, teachers, users, attendances, saveAttendance, addNotificationLog, attendanceRequests, approveAttendanceRequest, rejectAttendanceRequest } = useStore();
@@ -24,9 +25,10 @@ export function AttendanceTracker() {
   const [searchWord, setSearchWord] = useState('');
   const [isSaved, setIsSaved] = useState(false);
 
-  const classes = ['Nursery', 'L.K.G', 'U.K.G', 'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5', 'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10', 'Class 11', 'Class 12'];
+  const existingGrades = Array.from(new Set(students.filter(s => !s.isDeleted).map(s => normalizeGrade(s.grade))));
+  const classes = Array.from(new Set([...ALL_STANDARD_CLASSES, ...existingGrades]));
 
-  const classStudents = attendanceType === 'STUDENT' ? students.filter(s => s.grade === selectedClass) : [];
+  const classStudents = attendanceType === 'STUDENT' ? students.filter(s => !s.isDeleted && (s.grade === selectedClass || isSameGrade(s.grade, selectedClass))) : [];
   let staffMembers = attendanceType === 'STAFF'
     ? [
         ...users.filter(u => u.role === 'TEACHER' || u.role === 'CLERK'),
@@ -149,7 +151,7 @@ export function AttendanceTracker() {
 
   // Monthly report calculations
   let monthlyPeople = reportType === 'STUDENT'
-    ? students.filter(s => s.grade === reportClass)
+    ? students.filter(s => !s.isDeleted && (s.grade === reportClass || isSameGrade(s.grade, reportClass)))
     : [
         ...users.filter(u => u.role === 'TEACHER' || u.role === 'CLERK'),
         ...teachers

@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import type { Student, Teacher, User, ExamMark } from '../types';
 import { StudentReportCard } from '../components/StudentReportCard';
+import { normalizeGrade, isSameGrade, getDefaultSubjectsForGrade } from '../utils/gradeHelper';
 
 // ERP modular components import
 import { StudentRegistration } from '../components/erp/StudentRegistration';
@@ -105,13 +106,16 @@ export function AdminPanel() {
 
   const sortedStudentsToDisplay = [...students].reverse();
   let filteredDirectoryStudents = sortedStudentsToDisplay.filter(s => {
-    const sPass = s.name.toLowerCase().includes(studentSearch.toLowerCase()) || (s.srNo?.includes(studentSearch));
-    const cPass = studentClassFilter === 'All' ? true : s.grade === studentClassFilter;
+    const sPass = s.name.toLowerCase().includes(studentSearch.toLowerCase()) || 
+                  (s.srNo && s.srNo.toLowerCase().includes(studentSearch.toLowerCase())) ||
+                  (s.rollNo && String(s.rollNo).includes(studentSearch)) ||
+                  (s.admissionNo && s.admissionNo.toLowerCase().includes(studentSearch.toLowerCase()));
+    const cPass = studentClassFilter === 'All' ? true : isSameGrade(s.grade, studentClassFilter);
     return sPass && cPass;
   });
 
   if (studentSearch === '' && studentClassFilter === 'All') {
-    filteredDirectoryStudents = filteredDirectoryStudents.slice(0, 10);
+    filteredDirectoryStudents = filteredDirectoryStudents.slice(0, 50);
   }
 
   const handleAddTeacher = (e: React.FormEvent) => {
@@ -175,7 +179,7 @@ export function AdminPanel() {
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
-      const lines = text.split('\n');
+      const lines = text.split('\n').map(l => l.replace(/\r$/, '')).filter(l => l.trim().length > 0);
       if (lines.length > 1) {
         const parseLine = (line: string) => {
           const result: string[] = [];
@@ -197,66 +201,109 @@ export function AdminPanel() {
         };
 
         const headerLine = parseLine(lines[0]);
-        const marksToImport: Omit<ExamMark, 'id' | 'date' | 'schoolId'>[] = [];
-        
-        const parsedStudents = lines.slice(1).map(line => {
-           if (!line.trim()) return null;
-           const cols = parseLine(line);
-           if (cols.length >= 12) {
-              const studentId = `s_${Date.now()}_${Math.random().toString().slice(2, 6)}`;
-              const student: Partial<Student> = {
-                 role: 'STUDENT',
-                 id: studentId,
-                 srNo: cols[0], admissionNo: cols[1], name: cols[2], gender: cols[3] as any, fatherName: cols[4], motherName: cols[5], dob: cols[6],
-                 mobile: cols[7], aadhar: cols[8], email: cols[9], address: cols[10].replace(/"/g, ''), grade: cols[11], rollNo: cols[12],
-                 academicSession: cols[13] || '', previousClass: cols[14] || '', stream: cols[15] as any, password: cols[16] || 'password123',
-                 feeBalance: Number(cols[17] || 0)
-              };
-
-              // Map dynamic exam marks
-              for (let i = 18; i < cols.length; i += 2) {
-                 const colNameHeader = headerLine[i];
-                 if (!colNameHeader) continue;
-                 const match = colNameHeader.replace(/"/g, '').match(/(.+) (.*?) Obtained/);
-                 if (match) {
-                   const subject = match[1].trim();
-                   const examType = match[2].trim() as any;
-                   const marksObtained = Number(cols[i]);
-                   const maxMarks = Number(cols[i + 1]);
-                   if (!isNaN(marksObtained) && !isNaN(maxMarks) && cols[i] !== '') {
-                     marksToImport.push({
-                        studentId,
-                        teacherId: currentUser?.id || 'admin',
-                        examType,
-                        subject,
-                        marksObtained,
-                        maxMarks
-                     });
-                   }
-                 }
-              }
-
-              return student.name && student.grade ? (student as Student) : null;
-           }
-           return null;
-        }).filter(Boolean) as Student[];
-
-        const allowedParsed = parsedStudents.filter(student => {
-          if (!student.academicSession) return true;
-          return allowedSessions.includes(student.academicSession);
+        const headerMap: Record<string, number> = {};
+        headerLine.forEach((h, idx) => {
+          const cleanH = h.toLowerCase().replace(/[^a-z0-9]/g, '');
+          headerMap[cleanH] = idx;
         });
 
-        const skipped = parsedStudents.length - allowedParsed.length;
-        if (skipped > 0) {
-          alert(`Permission Alert: ${skipped} student(s) skipped because their academic session is locked or unapproved by the Principal Master.`);
-        }
+        const getCol = (cols: string[], possibleKeys: string[], fallbackIdx?: number): string => {
+          for (const key of possibleKeys) {
+            const cleanKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (headerMap[cleanKey] !== undefined && cols[headerMap[cleanKey]] !== undefined) {
+              return cols[headerMap[cleanKey]].replace(/^"|"$/g, '').trim();
+            }
+          }
+          if (fallbackIdx !== undefined && cols[fallbackIdx] !== undefined) {
+            return cols[fallbackIdx].replace(/^"|"$/g, '').trim();
+          }
+          return '';
+        };
 
-        if (allowedParsed.length > 0) {
-          importStudents(allowedParsed);
+        const marksToImport: Omit<ExamMark, 'id' | 'date' | 'schoolId'>[] = [];
+        const currentSession = activeAcademicSession || '2025-26';
+        
+        const parsedStudents = lines.slice(1).map((line, lineIdx) => {
+           if (!line.trim()) return null;
+           const cols = parseLine(line);
+           if (cols.length < 2) return null;
+
+           const studentId = `s_${Date.now()}_${lineIdx}_${Math.random().toString().slice(2, 6)}`;
+           
+           const rawName = getCol(cols, ['name', 'studentname', 'student_name', 'fullname', 'candidate_name'], 2) || (cols.length > 0 ? cols[0] : '');
+           if (!rawName) return null;
+
+           const rawGrade = getCol(cols, ['class', 'grade', 'std', 'standard', 'classname'], 11) || (cols.length > 1 ? cols[1] : 'Class 1');
+           const normalizedGrade = normalizeGrade(rawGrade);
+
+           const rawSession = getCol(cols, ['academicsession', 'session', 'academic_session', 'year', 'sessionyear'], 13);
+           const studentSession = rawSession ? rawSession.trim() : currentSession;
+
+           const rawStream = getCol(cols, ['stream', 'group', 'branch', 'faculty'], 15);
+           const rawRoll = getCol(cols, ['rollno', 'roll_no', 'roll', 'examrollno', 'rollnumber'], 12) || String(lineIdx + 1);
+           const rawSr = getCol(cols, ['srno', 'sr_no', 'sr', 'serialno', 'srnumber'], 0) || `SR-${1000 + lineIdx + 1}`;
+           const rawAdm = getCol(cols, ['admissionno', 'admission_no', 'admno', 'adm_no', 'regno', 'registrationno'], 1) || `ADM-${5000 + lineIdx + 1}`;
+
+           const student: Student = {
+              role: 'STUDENT',
+              id: studentId,
+              schoolId: currentUser?.schoolId || '',
+              srNo: rawSr,
+              admissionNo: rawAdm,
+              name: rawName,
+              gender: (getCol(cols, ['gender', 'sex'], 3) as any) || 'Male',
+              fatherName: getCol(cols, ['father', 'fathername', 'fathersname', 'father_name'], 4),
+              motherName: getCol(cols, ['mother', 'mothername', 'mothersname', 'mother_name'], 5),
+              dob: getCol(cols, ['dob', 'dateofbirth', 'birthdate'], 6),
+              mobile: getCol(cols, ['mobile', 'phone', 'contact', 'mobileno', 'phoneno'], 7),
+              aadhar: getCol(cols, ['aadhar', 'aadharno', 'aadhaar', 'uid'], 8),
+              email: getCol(cols, ['email', 'emailid'], 9),
+              address: getCol(cols, ['address', 'fulladdress', 'addr'], 10),
+              grade: normalizedGrade,
+              rollNo: rawRoll,
+              academicSession: studentSession,
+              previousClass: getCol(cols, ['previousclass', 'prevclass', 'prev_class'], 14),
+              stream: rawStream as any,
+              password: getCol(cols, ['password', 'pwd'], 16) || 'password123',
+              feeBalance: Number(getCol(cols, ['feebalance', 'fee_balance', 'dues', 'balance'], 17) || 0),
+              subjects: getDefaultSubjectsForGrade(normalizedGrade, rawStream),
+              isDeleted: false
+           };
+
+           // Map dynamic exam marks if available
+           for (let i = 0; i < cols.length; i++) {
+              const colNameHeader = headerLine[i];
+              if (!colNameHeader) continue;
+              const match = colNameHeader.replace(/"/g, '').match(/(.+) (.*?) Obtained/i);
+              if (match) {
+                const subject = match[1].trim();
+                const examType = match[2].trim() as any;
+                const marksObtained = Number(cols[i]);
+                const maxMarks = Number(cols[i + 1] || 100);
+                if (!isNaN(marksObtained) && cols[i] !== '') {
+                  marksToImport.push({
+                     studentId,
+                     teacherId: currentUser?.id || 'admin',
+                     examType,
+                     subject,
+                     marksObtained,
+                     maxMarks: isNaN(maxMarks) ? 100 : maxMarks
+                  });
+                }
+              }
+           }
+
+           return student;
+        }).filter(Boolean) as Student[];
+
+        if (parsedStudents.length > 0) {
+          importStudents(parsedStudents);
           if (marksToImport.length > 0) {
             importMarks(marksToImport);
           }
-          alert(`Successfully imported ${allowedParsed.length} student records and ${marksToImport.length} marks from CSV file.`);
+          alert(`Successfully imported ${parsedStudents.length} student records and ${marksToImport.length} marks. All students are now active across Admit Cards, Exam Results, and All School Modules.`);
+        } else {
+          alert('No valid student rows found in the CSV file.');
         }
       }
     };

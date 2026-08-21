@@ -3,6 +3,7 @@ import { useStore } from '../../store';
 import { Card, Button, Label, Input } from '../UI';
 import { type Student, type ExamMark } from '../../types';
 import { Printer, Search, Award, FileText, ChevronRight, Eye } from 'lucide-react';
+import { isSameGrade, normalizeGrade, ALL_STANDARD_CLASSES } from '../../utils/gradeHelper';
 
 const getSchoolNameStyle = (name: string, template: 'classic_portrait' | 'landscape_new') => {
   const len = name.length;
@@ -805,9 +806,10 @@ export function BulkResultsPrinter() {
     { name: 'Charcoal Black', value: '#374151' }
   ];
 
-  const classes = ['Nursery', 'L.K.G', 'U.K.G', 'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5', 'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10', 'Class 11', 'Class 12'];
+  const existingGrades = Array.from(new Set(students.filter(s => !s.isDeleted).map(s => normalizeGrade(s.grade))));
+  const classes = Array.from(new Set([...ALL_STANDARD_CLASSES, ...existingGrades]));
 
-  const classStudents = students.filter(s => s.grade === selectedClass).sort((a, b) => Number(a.rollNo || 0) - Number(b.rollNo || 0));
+  const classStudents = students.filter(s => !s.isDeleted && (s.grade === selectedClass || isSameGrade(s.grade, selectedClass))).sort((a, b) => Number(a.rollNo || 0) - Number(b.rollNo || 0));
 
   const handlePrint = () => {
     window.print();

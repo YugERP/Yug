@@ -4,6 +4,7 @@ import { type Student, type ExamMark, type ExamType } from '../types';
 import { Card, Button, Label } from './UI';
 import { Printer, Upload, RefreshCw, Award, BookOpen, CheckCircle, AlertCircle, FileText, X, Download, BarChart2, Eye } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { isSameGrade } from '../utils/gradeHelper';
 
 const getSchoolNameStyle = (name: string, template: 'classic_portrait' | 'landscape_new') => {
   const len = name.length;
@@ -239,7 +240,7 @@ export function StudentReportCard({ student, onClose, allowEditPhoto = true }: S
 
   // Calculate Student Rank inside Class
   const rank = (() => {
-    const classStudents = students.filter(s => s.grade === student.grade && s.schoolId === student.schoolId);
+    const classStudents = students.filter(s => !s.isDeleted && isSameGrade(s.grade, student.grade) && (!s.schoolId || !student.schoolId || s.schoolId === student.schoolId));
     if (classStudents.length <= 1) return '1 / 1';
     
     const scores = classStudents.map(s => {

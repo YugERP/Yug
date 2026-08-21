@@ -408,7 +408,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         section: historyEntry.section || s.section
       };
     }
-    return null;
+    // Otherwise return student so they are always accessible
+    return s;
   }).filter(Boolean) as Student[];
   const filteredTeachers = isAdminPanel ? teachers : teachers.filter(t => t.schoolId === effectiveSchoolId);
   const filteredHomeworks = isAdminPanel ? homeworks : homeworks.filter(h => h.schoolId === effectiveSchoolId);
@@ -615,7 +616,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const deleteStudent = async (id: string) => {
     try {
-      await updateDoc(doc(db, 'students', id), { isDeleted: true });
+      // Optimistic local state updates for instantaneous responsiveness
+      setStudents(prev => prev.filter(s => s.id !== id));
+      setMarks(prev => prev.filter(m => m.studentId !== id));
+      setFeeRecords(prev => prev.filter(f => f.studentId !== id));
+      setAttendances(prev => prev.filter(a => a.studentId !== id && a.userId !== id));
+      setParentAccounts(prev => prev.filter(p => p.studentId !== id));
+
+      // Direct, permanent deletion from Firestore database
+      await deleteDoc(doc(db, 'students', id));
+
+      // Also clean up any associated student marks, fee payments, and attendance records from Firestore
+      const relatedMarks = marks.filter(m => m.studentId === id);
+      for (const m of relatedMarks) {
+        await deleteDoc(doc(db, 'marks', m.id)).catch(() => {});
+      }
+      const relatedFees = feeRecords.filter(f => f.studentId === id);
+      for (const f of relatedFees) {
+        await deleteDoc(doc(db, 'feeRecords', f.id)).catch(() => {});
+      }
+      const relatedAttendances = attendances.filter(a => a.studentId === id || a.userId === id);
+      for (const a of relatedAttendances) {
+        await deleteDoc(doc(db, 'attendances', a.id)).catch(() => {});
+      }
+      const relatedParents = parentAccounts.filter(p => p.studentId === id);
+      for (const p of relatedParents) {
+        await deleteDoc(doc(db, 'parentAccounts', p.id)).catch(() => {});
+      }
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, `students/${id}`);
     }
@@ -630,21 +657,34 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   };
 
   const hardDeleteStudent = async (id: string) => {
-    try {
-      await deleteDoc(doc(db, 'students', id));
-    } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `students/hardDelete/${id}`);
-    }
+    await deleteStudent(id);
   };
 
   const deleteAllStudentsInSchool = async (schoolId: string) => {
     try {
       const studentsToDelete = students.filter(s => s.schoolId === schoolId);
-      const batchList = [];
+      const studentIds = new Set(studentsToDelete.map(s => s.id));
+
+      setStudents(prev => prev.filter(s => s.schoolId !== schoolId));
+      setMarks(prev => prev.filter(m => !studentIds.has(m.studentId)));
+      setFeeRecords(prev => prev.filter(f => !studentIds.has(f.studentId)));
+      setAttendances(prev => prev.filter(a => !(a.studentId && studentIds.has(a.studentId))));
+
       for (const s of studentsToDelete) {
-        batchList.push(deleteDoc(doc(db, 'students', s.id)));
+        await deleteDoc(doc(db, 'students', s.id)).catch(() => {});
       }
-      await Promise.all(batchList);
+      const marksToDelete = marks.filter(m => studentIds.has(m.studentId));
+      for (const m of marksToDelete) {
+        await deleteDoc(doc(db, 'marks', m.id)).catch(() => {});
+      }
+      const feesToDelete = feeRecords.filter(f => studentIds.has(f.studentId));
+      for (const f of feesToDelete) {
+        await deleteDoc(doc(db, 'feeRecords', f.id)).catch(() => {});
+      }
+      const attsToDelete = attendances.filter(a => (a.studentId && studentIds.has(a.studentId)));
+      for (const a of attsToDelete) {
+        await deleteDoc(doc(db, 'attendances', a.id)).catch(() => {});
+      }
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, `students/bulk_delete/${schoolId}`);
     }

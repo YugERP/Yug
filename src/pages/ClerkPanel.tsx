@@ -6,6 +6,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import type { Student, FeeRecord } from '../types';
 import { AdminPanel } from './AdminPanel';
 import { TeacherPanel } from './TeacherPanel';
+import { isSameGrade, normalizeGrade, ALL_STANDARD_CLASSES } from '../utils/gradeHelper';
 
 const CLASSES = ['Nursery', 'L.K.G', 'U.K.G', 'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5', 'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10', 'Class 11', 'Class 12'];
 const MONTHS = ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', 'January', 'February', 'March'];
@@ -137,7 +138,7 @@ export function ClerkPanel() {
     }
   ];
 
-  const filteredStudents = students.filter(s => s.grade === selectedClass);
+  const filteredStudents = students.filter(s => !s.isDeleted && (s.grade === selectedClass || isSameGrade(s.grade, selectedClass)));
   const selectedStudentObj = students.find(s => s.id === selectedStudent);
   const selectedStudentBal = selectedStudentObj ? getStudentBalance(selectedStudentObj.id) : null;
 

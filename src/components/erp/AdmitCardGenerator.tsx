@@ -3,6 +3,7 @@ import { useStore } from '../../store';
 import { Card, Button, Label, Input } from '../UI';
 import { Printer, Upload, Image as ImageIcon, Trash2, Info, CheckCircle2, Sliders, Eye, Sparkles, LayoutTemplate, Layers, AlertCircle } from 'lucide-react';
 import { type Student } from '../../types';
+import { normalizeGrade, isSameGrade, ALL_STANDARD_CLASSES } from '../../utils/gradeHelper';
 
 export function AdmitCardGenerator() {
   const { students, schools, currentUser, activeAcademicSession } = useStore();
@@ -105,10 +106,13 @@ export function AdmitCardGenerator() {
     localStorage.setItem('sch_custom_admit_card_hide_border', val.toString());
   };
 
-  // Filter students by active school and academic session first
-  const activeStudents = students.filter(
-    s => s.schoolId === currentUser?.schoolId && s.academicSession === activeAcademicSession
-  );
+  // Filter students by active school and academic session (resilient to allow all imported and existing students)
+  const activeStudents = students.filter(s => {
+    if (s.isDeleted) return false;
+    const matchesSchool = !currentUser?.schoolId || !s.schoolId || s.schoolId === currentUser?.schoolId;
+    const matchesSession = !activeAcademicSession || !s.academicSession || s.academicSession === activeAcademicSession;
+    return matchesSchool && matchesSession;
+  });
 
   // Define class order for global sorting
   const classOrder = [
@@ -120,8 +124,11 @@ export function AdmitCardGenerator() {
   ];
 
   const getClassIndex = (grade: string) => {
-    const idx = classOrder.indexOf(grade);
-    return idx === -1 ? 999 : idx; // Put unknown classes at the end
+    const norm = normalizeGrade(grade);
+    const idx = ALL_STANDARD_CLASSES.indexOf(norm);
+    if (idx !== -1) return idx;
+    const rawIdx = classOrder.indexOf(grade);
+    return rawIdx === -1 ? 999 : rawIdx;
   };
   
   // Sort all active students globally to assign continuous exam roll numbers
@@ -131,7 +138,7 @@ export function AdmitCardGenerator() {
     const aRoll = parseInt(a.rollNo) || 0;
     const bRoll = parseInt(b.rollNo) || 0;
     if (aRoll !== bRoll) return aRoll - bRoll;
-    return a.name.localeCompare(b.name);
+    return (a.name || '').localeCompare(b.name || '');
   });
 
   // Calculate Exam Roll Number for a given student
@@ -143,9 +150,32 @@ export function AdmitCardGenerator() {
   };
 
   // Group students by class
-  const classGroups = Array.from(new Set(activeStudents.map(s => s.grade))).sort((a, b) => getClassIndex(a as string) - getClassIndex(b as string));
+  const existingGrades: string[] = Array.from(new Set(activeStudents.map(s => normalizeGrade(s.grade)))).filter((g): g is string => Boolean(g));
+  const classGroups: string[] = Array.from(new Set([...ALL_STANDARD_CLASSES, ...existingGrades])).sort((a, b) => getClassIndex(a) - getClassIndex(b));
 
-  const filteredStudents = sortedStudentsGlobal.filter(s => s.grade === selectedClass);
+  const filteredStudents = sortedStudentsGlobal.filter(s => 
+    selectedClass ? (isSameGrade(s.grade, selectedClass) || s.grade === selectedClass) : true
+  );
+
+  // Auto initialize selectedClass to first class with students if empty
+  useEffect(() => {
+    if (!selectedClass && activeStudents.length > 0) {
+      const firstClassWithStudents = classGroups.find(cls => 
+        activeStudents.some(s => isSameGrade(s.grade, cls) || s.grade === cls)
+      );
+      if (firstClassWithStudents) {
+        setSelectedClass(firstClassWithStudents);
+      }
+    }
+  }, [activeStudents.length, selectedClass]);
+
+  // Keep selectedStudentIds synchronized when class changes
+  useEffect(() => {
+    if (selectedClass) {
+      const matched = sortedStudentsGlobal.filter(s => isSameGrade(s.grade, selectedClass) || s.grade === selectedClass);
+      setSelectedStudentIds(matched.map(s => s.id));
+    }
+  }, [selectedClass, sortedStudentsGlobal.length]);
 
   // If singleStudentId is set, filter to only that student, else use selectedStudentIds
   const studentsToRender = singleStudentId 
@@ -432,12 +462,18 @@ export function AdmitCardGenerator() {
                   const cls = e.target.value;
                   setSelectedClass(cls);
                   setSingleStudentId('');
-                  setSelectedStudentIds(sortedStudentsGlobal.filter(s => s.grade === cls).map(s => s.id));
+                  setSelectedStudentIds(sortedStudentsGlobal.filter(s => isSameGrade(s.grade, cls) || s.grade === cls).map(s => s.id));
                 }}>
                   <option value="">-- Choose Class --</option>
-                  {classGroups.map(cls => (
-                    <option key={cls} value={cls}>Class {cls}</option>
-                  ))}
+                  {classGroups.map(cls => {
+                    const stCount = activeStudents.filter(s => isSameGrade(s.grade, cls) || s.grade === cls).length;
+                    const label = cls.startsWith('Class') || cls === 'Nursery' || cls === 'L.K.G' || cls === 'U.K.G' ? cls : `Class ${cls}`;
+                    return (
+                      <option key={cls} value={cls}>
+                        {label} {stCount > 0 ? `(${stCount} Students)` : ''}
+                      </option>
+                    );
+                  })}
                 </Input>
               </div>
               <div>

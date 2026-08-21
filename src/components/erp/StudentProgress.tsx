@@ -19,6 +19,7 @@ import {
   Trash2
 } from 'lucide-react';
 import type { Student, AcademicHistoryEntry } from '../../types';
+import { isSameGrade, normalizeGrade } from '../../utils/gradeHelper';
 
 const CLASSES = ['Nursery', 'L.K.G', 'U.K.G', 'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5', 'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10', 'Class 11', 'Class 12'];
 const SECTIONS = ['A', 'B', 'C', 'D'];
@@ -232,10 +233,11 @@ export function StudentProgress() {
 
   // Filter students from store matching: School, From Session, From Class, From Section
   const matchedStudents = students.filter(s => 
-    s.schoolId === currentSchoolId &&
-    s.academicSession === fromSession &&
-    s.grade === fromClass &&
-    s.section === fromSection
+    (!currentSchoolId || !s.schoolId || s.schoolId === currentSchoolId) &&
+    (!fromSession || !s.academicSession || s.academicSession === fromSession) &&
+    (isSameGrade(s.grade, fromClass) || s.grade === fromClass) &&
+    (!s.section || s.section === fromSection) &&
+    !s.isDeleted
   );
 
   // Pull matched students into our rows staging state whenever criteria change
