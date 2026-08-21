@@ -848,7 +848,7 @@ export function MasterAdminPanel() {
             <tbody className="divide-y divide-slate-100">
               {schools.filter(school => selectedSchoolId === 'all' || school.id === selectedSchoolId).map(school => {
                 const schoolAdmins = users.filter(u => u.schoolId === school.id && u.role === 'ADMIN');
-                const schoolStudents = students.filter(s => s.schoolId === school.id && (!s.academicSession || s.academicSession === activeAcademicSession));
+                const schoolStudents = students.filter(s => (s.schoolId === school.id || (!s.schoolId && school.id === 'sch1')) && !s.isDeleted);
                 const schoolFees = feeRecords.filter(f => f.schoolId === school.id && schoolStudents.some(s => s.id === f.studentId));
                 
                 const schoolFeatures = pendingFeaturesMap[school.id] ?? school.features ?? [];

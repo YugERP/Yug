@@ -16,21 +16,31 @@ import {
   Download,
   Upload,
   RotateCcw,
-  Trash2
+  Trash2,
+  Search
 } from 'lucide-react';
 import type { Student, AcademicHistoryEntry } from '../../types';
-import { isSameGrade, normalizeGrade } from '../../utils/gradeHelper';
+import { ALL_STANDARD_CLASSES, isSameGrade, normalizeGrade } from '../../utils/gradeHelper';
 
-const CLASSES = ['Nursery', 'L.K.G', 'U.K.G', 'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5', 'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10', 'Class 11', 'Class 12'];
-const SECTIONS = ['A', 'B', 'C', 'D'];
+const TARGET_CLASSES = [
+  'Nursery', 'L.K.G', 'U.K.G', 
+  'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5', 
+  'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10', 
+  'Class 11', 'Class 12', 
+  'Graduated'
+];
+const SECTIONS = ['All', 'A', 'B', 'C', 'D', 'E'];
+const TARGET_SECTIONS = ['A', 'B', 'C', 'D', 'E'];
 
 interface PromotionRow {
   studentId: string;
   studentName: string;
+  studentGrade: string;
+  studentSession: string;
   rollNo: string;
   selected: boolean;
   resultStatus: 'Pass' | 'Fail' | 'Compartment' | 'Absent';
-  promotionType: 'Promote' | 'Detain' | 'TC Issue' | 'Dropout';
+  promotionType: 'Promote' | 'Detain' | 'TC Issue' | 'Dropout' | 'Class Jump';
   newSection: string;
   newRollNo: string;
   currentDues: number;
@@ -59,6 +69,8 @@ export function StudentProgress() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isImporting, setIsImporting] = useState(false);
 
+  const [searchQuery, setSearchQuery] = useState('');
+
   const EXPORT_FIELDS = [
     'id', 'name', 'password', 'role', 'grade', 'schoolId', 'feeBalance', 
     'academicSession', 'admissionNo', 'penNo', 'srNo', 'admissionDate', 
@@ -77,9 +89,12 @@ export function StudentProgress() {
   };
 
   const handleExportCSV = () => {
-    const sessionStudents = students.filter(s => s.schoolId === currentSchoolId && s.academicSession === fromSession);
+    const sessionStudents = students.filter(s => 
+      (!currentSchoolId || !s.schoolId || s.schoolId === currentSchoolId) &&
+      (fromSession === 'All' || s.academicSession === fromSession)
+    );
     if (sessionStudents.length === 0) {
-      alert(`No students found for session ${fromSession} to export backup.`);
+      alert(`No students found to export backup.`);
       return;
     }
 
@@ -91,7 +106,7 @@ export function StudentProgress() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `StudentBackup_${fromSession}_${Date.now()}.csv`;
+    link.download = `StudentBackup_${fromSession || 'All'}_${Date.now()}.csv`;
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -180,12 +195,28 @@ export function StudentProgress() {
     reader.readAsText(file);
   };
 
-  // 1. Session / Class Form State
-  const [fromSession, setFromSession] = useState(activeAcademicSession || '2026-27');
-  const [toSession, setToSession] = useState('');
-  const [fromClass, setFromClass] = useState(CLASSES[0]);
-  const [toClass, setToClass] = useState(CLASSES[1] || CLASSES[0]);
-  const [fromSection, setFromSection] = useState('A');
+  // Build dynamic available sessions
+  const availableFromSessions = Array.from(new Set([
+    'All',
+    ...(activeAcademicSession ? [activeAcademicSession] : []),
+    ...(academicSessions || []),
+    ...(students.map(s => s.academicSession).filter(Boolean) as string[]),
+    '2024-25',
+    '2025-26',
+    '2026-27',
+    '2027-28'
+  ]));
+
+  // Build dynamic class options with student count
+  const existingStudentGrades = Array.from(new Set(students.map(s => normalizeGrade(s.grade)))).filter(Boolean) as string[];
+  const classOptions: string[] = Array.from(new Set(['All', ...ALL_STANDARD_CLASSES, ...existingStudentGrades]));
+
+  // 1. Session / Class Form State - defaults to 'All' so all imported students appear immediately
+  const [fromSession, setFromSession] = useState('All');
+  const [toSession, setToSession] = useState(activeAcademicSession || '2026-27');
+  const [fromClass, setFromClass] = useState('All');
+  const [toClass, setToClass] = useState(ALL_STANDARD_CLASSES[0]);
+  const [fromSection, setFromSection] = useState('All');
   const [toSection, setToSection] = useState('A');
 
   // Rows and summary state
@@ -202,43 +233,62 @@ export function StudentProgress() {
   // Auto-shift 'toSession' and 'toClass' based on current selections
   useEffect(() => {
     // Session Shift
-    const sIndex = academicSessions.indexOf(fromSession);
-    if (sIndex !== -1 && sIndex < academicSessions.length - 1) {
-      setToSession(academicSessions[sIndex + 1]);
-    } else {
-      // Create helper default next session e.g. '2027-28' if current is '2026-27'
-      const parts = fromSession.split('-');
-      if (parts.length === 2) {
-        const yr1 = parseInt(parts[0]) + 1;
-        const yr2 = parseInt(parts[1]) + 1;
-        setToSession(`${yr1}-${yr2.toString().slice(-2)}`);
+    if (fromSession && fromSession !== 'All') {
+      const sIndex = academicSessions.indexOf(fromSession);
+      if (sIndex !== -1 && sIndex < academicSessions.length - 1) {
+        setToSession(academicSessions[sIndex + 1]);
       } else {
-        setToSession('2027-28');
+        const parts = fromSession.split('-');
+        if (parts.length === 2) {
+          const yr1 = parseInt(parts[0]) + 1;
+          const yr2 = parseInt(parts[1]) + 1;
+          setToSession(`${yr1}-${yr2.toString().slice(-2)}`);
+        } else {
+          setToSession('2027-28');
+        }
       }
+    } else {
+      setToSession(activeAcademicSession || '2026-27');
     }
 
     // Class Shift
-    const cIndex = CLASSES.indexOf(fromClass);
-    if (cIndex !== -1 && cIndex < CLASSES.length - 1) {
-      setToClass(CLASSES[cIndex + 1]);
+    if (fromClass && fromClass !== 'All') {
+      const stdClasses = TARGET_CLASSES.filter(c => c !== 'Graduated');
+      const norm = normalizeGrade(fromClass);
+      const cIndex = stdClasses.findIndex(c => isSameGrade(c, norm));
+      if (cIndex !== -1 && cIndex < stdClasses.length - 1) {
+        setToClass(stdClasses[cIndex + 1]);
+      } else if (cIndex === stdClasses.length - 1) {
+        setToClass('Graduated');
+      } else {
+        setToClass('Class 2');
+      }
     } else {
-      setToClass('Graduated');
+      setToClass('Next Class');
     }
-  }, [fromSession, fromClass, academicSessions]);
+  }, [fromSession, fromClass, academicSessions, activeAcademicSession]);
 
   // Keep toSection in sync with fromSection as starter
   useEffect(() => {
-    setToSection(fromSection);
+    setToSection(fromSection === 'All' ? 'A' : fromSection);
   }, [fromSection]);
 
-  // Filter students from store matching: School, From Session, From Class, From Section
-  const matchedStudents = students.filter(s => 
-    (!currentSchoolId || !s.schoolId || s.schoolId === currentSchoolId) &&
-    (!fromSession || !s.academicSession || s.academicSession === fromSession) &&
-    (isSameGrade(s.grade, fromClass) || s.grade === fromClass) &&
-    (!s.section || s.section === fromSection) &&
-    !s.isDeleted
-  );
+  // Filter students from store matching: School, From Session, From Class, From Section, Search Query
+  const matchedStudents = students.filter(s => {
+    if (s.isDeleted) return false;
+    const matchesSchool = !currentSchoolId || !s.schoolId || s.schoolId === currentSchoolId;
+    const matchesSession = fromSession === 'All' || !fromSession || !s.academicSession || s.academicSession === fromSession;
+    const matchesClass = fromClass === 'All' || !fromClass || isSameGrade(s.grade, fromClass) || s.grade === fromClass;
+    const matchesSection = fromSection === 'All' || !fromSection || !s.section || s.section === fromSection;
+    const matchesSearch = !searchQuery.trim() || 
+      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (s.rollNo && String(s.rollNo).includes(searchQuery)) ||
+      (s.srNo && s.srNo.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (s.admissionNo && s.admissionNo.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (s.grade && s.grade.toLowerCase().includes(searchQuery.toLowerCase()));
+
+    return matchesSchool && matchesSession && matchesClass && matchesSection && matchesSearch;
+  });
 
   // Pull matched students into our rows staging state whenever criteria change
   useEffect(() => {
@@ -247,6 +297,8 @@ export function StudentProgress() {
       return {
         studentId: student.id,
         studentName: student.name,
+        studentGrade: student.grade || 'N/A',
+        studentSession: student.academicSession || '2025-26',
         rollNo: student.rollNo,
         selected: true,
         resultStatus: 'Pass',
@@ -259,7 +311,7 @@ export function StudentProgress() {
     });
     setPromotionRows(rows);
     setPromotionFinishedSummary(null);
-  }, [fromSession, fromClass, fromSection, toSection, students, currentSchoolId]);
+  }, [fromSession, fromClass, fromSection, toSection, searchQuery, students, currentSchoolId]);
 
   // Bulk operation triggers
   const handleBulkResultStatus = (status: 'Pass' | 'Fail' | 'Compartment' | 'Absent') => {
@@ -353,10 +405,13 @@ export function StudentProgress() {
         const fullStudent = students.find(s => s.id === row.studentId);
         if (!fullStudent) continue;
 
+        const currentStudentSession = fullStudent.academicSession || (fromSession !== 'All' ? fromSession : '2025-26');
+        const currentStudentGrade = fullStudent.grade || (fromClass !== 'All' ? fromClass : 'Class 1');
+
         // Archive current record details
         const oldHistoryEntry: AcademicHistoryEntry = {
-          academicSession: fromSession,
-          grade: fromClass,
+          academicSession: currentStudentSession,
+          grade: currentStudentGrade,
           rollNo: fullStudent.rollNo,
           section: fullStudent.section || '',
           resultStatus: row.resultStatus,
@@ -367,24 +422,39 @@ export function StudentProgress() {
 
         const updatedHistory = [...(fullStudent.academicHistory || []), oldHistoryEntry];
 
-        let targetGrade = fromClass;
-        let targetSession = toSession;
-        let targetSection = row.newSection;
+        let targetGrade = currentStudentGrade;
+        let targetSession = toSession || activeAcademicSession || '2026-27';
+        let targetSection = row.newSection || fullStudent.section || 'A';
 
         if (row.promotionType === 'Promote') {
-          targetGrade = toClass;
+          if (toClass && toClass !== 'Next Class' && toClass !== 'Graduated') {
+            targetGrade = toClass;
+          } else if (toClass === 'Graduated') {
+            targetGrade = 'Graduated';
+          } else {
+            // Compute next grade dynamically for individual student's current grade
+            const stdClasses = TARGET_CLASSES.filter(c => c !== 'Graduated');
+            const cIndex = stdClasses.findIndex(c => isSameGrade(c, currentStudentGrade));
+            if (cIndex !== -1 && cIndex < stdClasses.length - 1) {
+              targetGrade = stdClasses[cIndex + 1];
+            } else if (cIndex === stdClasses.length - 1) {
+              targetGrade = 'Graduated';
+            } else {
+              targetGrade = currentStudentGrade;
+            }
+          }
           promotedCount++;
         } else if (row.promotionType === 'Class Jump') {
-          targetGrade = toClass;
-          targetSession = fromSession; // Class Jump moves them in the SAME session
+          targetGrade = toClass && toClass !== 'Next Class' ? toClass : currentStudentGrade;
+          targetSession = currentStudentSession; // Class Jump moves them in the SAME session
           promotedCount++;
         } else if (row.promotionType === 'Detain') {
-          targetGrade = fromClass;
+          targetGrade = currentStudentGrade;
           detainedCount++;
         } else {
           // TC Issued or Dropout
           targetGrade = row.promotionType === 'TC Issue' ? 'School Left (TC Issued)' : 'School Left (Dropout)';
-          targetSession = fromSession; // Left students stay in their current session
+          targetSession = currentStudentSession; // Left students stay in their current session
           leftCount++;
         }
 
@@ -400,12 +470,12 @@ export function StudentProgress() {
           academicSession: targetSession,
           grade: targetGrade,
           section: targetSection,
-          rollNo: row.newRollNo,
+          rollNo: row.newRollNo || fullStudent.rollNo,
           previousDues: remainingDues,
           feeBalance: remainingDues, // carries over balance
           academicHistory: updatedHistory,
           hasPreviousClass: true,
-          previousClass: `${fromClass} (${fromSession})`
+          previousClass: `${currentStudentGrade} (${currentStudentSession})`
         };
 
         await updateStudent(row.studentId, updates);
@@ -464,85 +534,132 @@ export function StudentProgress() {
 
       {/* Main Parameters Setup */}
       <Card className="p-4 bg-slate-50/50 border-slate-200">
-        <span className="text-[10px] font-black text-indigo-700 uppercase tracking-widest block mb-3">
-          1. Session & Class Mapping Configurations
-        </span>
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+        <div className="flex justify-between items-center mb-3">
+          <span className="text-[10px] font-black text-indigo-700 uppercase tracking-widest block">
+            1. Session & Class Mapping Configurations (सत्र व कक्षा चयन)
+          </span>
+          <span className="text-[11px] font-bold text-slate-500">
+            कुल उपलब्ध छात्र: <strong className="text-indigo-600">{students.length}</strong>
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
           <div>
-            <Label>From academic session</Label>
+            <Label>From Academic Session (सत्र से)</Label>
             <Input 
               as="select" 
               value={fromSession} 
               onChange={e => setFromSession(e.target.value)}
             >
-              {academicSessions.map(sess => (
-                <option key={sess} value={sess}>{sess}</option>
-              ))}
+              {availableFromSessions.map(sess => {
+                const count = sess === 'All' 
+                  ? students.length 
+                  : students.filter(s => s.academicSession === sess).length;
+                return (
+                  <option key={sess} value={sess}>
+                    {sess === 'All' ? 'All Sessions (सभी सत्र)' : sess} {count > 0 ? `(${count})` : ''}
+                  </option>
+                );
+              })}
             </Input>
           </div>
 
           <div>
-            <Label>To academic session</Label>
+            <Label>To Academic Session (अगले सत्र में)</Label>
             <Input 
               type="text"
               value={toSession}
               onChange={e => setToSession(e.target.value)}
-              placeholder="e.g. 2027-28"
+              placeholder="e.g. 2026-27"
             />
           </div>
 
           <div>
-            <Label>From Grade / Class</Label>
+            <Label>From Grade / Class (वर्तमान कक्षा)</Label>
             <Input 
               as="select" 
               value={fromClass} 
               onChange={e => setFromClass(e.target.value)}
             >
-              {CLASSES.map(cls => (
-                <option key={cls} value={cls}>{cls}</option>
-              ))}
+              {classOptions.map(cls => {
+                const count = cls === 'All'
+                  ? (fromSession === 'All' ? students.length : students.filter(s => s.academicSession === fromSession).length)
+                  : students.filter(s => (isSameGrade(s.grade, cls) || s.grade === cls) && (fromSession === 'All' || !s.academicSession || s.academicSession === fromSession)).length;
+                const label = cls === 'All' ? 'All Classes (सभी कक्षाएं)' : (cls.startsWith('Class') || cls === 'Nursery' || cls === 'L.K.G' || cls === 'U.K.G' ? cls : `Class ${cls}`);
+                return (
+                  <option key={cls} value={cls}>
+                    {label} {count > 0 ? `(${count} Students)` : ''}
+                  </option>
+                );
+              })}
             </Input>
           </div>
 
           <div>
-            <Label>To Grade / Class</Label>
+            <Label>To Grade / Class (अगली कक्षा)</Label>
             <Input 
               as="select" 
               value={toClass} 
               onChange={e => setToClass(e.target.value)}
             >
-              {CLASSES.map(cls => (
+              {fromClass === 'All' && (
+                <option value="Next Class (स्वचालित अगली कक्षा)">Next Class (Auto per student)</option>
+              )}
+              {TARGET_CLASSES.map(cls => (
                 <option key={cls} value={cls}>{cls}</option>
               ))}
-              <option value="Graduated">Graduated (Out of School)</option>
             </Input>
           </div>
 
           <div>
-            <Label>From Section</Label>
+            <Label>From Section (वर्तमान सेक्शन)</Label>
             <Input 
               as="select" 
               value={fromSection} 
               onChange={e => setFromSection(e.target.value)}
             >
               {SECTIONS.map(sec => (
-                <option key={sec} value={sec}>Section {sec}</option>
+                <option key={sec} value={sec}>
+                  {sec === 'All' ? 'All Sections (सभी सेक्शन)' : `Section ${sec}`}
+                </option>
               ))}
             </Input>
           </div>
 
           <div>
-            <Label>To Section</Label>
+            <Label>To Section (नया सेक्शन)</Label>
             <Input 
               as="select" 
               value={toSection} 
               onChange={e => setToSection(e.target.value)}
             >
-              {SECTIONS.map(sec => (
+              {TARGET_SECTIONS.map(sec => (
                 <option key={sec} value={sec}>Section {sec}</option>
               ))}
             </Input>
           </div>
+        </div>
+
+        {/* Quick Search Bar */}
+        <div className="mt-3 pt-3 border-t border-slate-200 flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+            <input 
+              type="text"
+              placeholder="Search by student name, roll number, SR No, or admission ID..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-300 rounded text-xs focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+          {searchQuery && (
+            <button 
+              onClick={() => setSearchQuery('')}
+              className="text-xs text-slate-500 hover:text-slate-700 px-2 py-1 bg-slate-200 rounded font-medium"
+            >
+              Clear
+            </button>
+          )}
         </div>
       </Card>
 
@@ -551,7 +668,7 @@ export function StudentProgress() {
         <div className="flex justify-between items-center mb-4 flex-wrap gap-3">
           <div>
             <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest block">
-              2. Student Cohort Register ({matchedStudents.length} Active Records)
+              2. Student Cohort Register ({matchedStudents.length} Active Records Found)
             </span>
             <p className="text-[10px] text-slate-400 mt-0.5">
               Refined filters: {fromClass} ({fromSection}) ➔ {toClass} ({toSection}) [{toSession}]
@@ -678,7 +795,7 @@ export function StudentProgress() {
             <Users className="h-8 w-8 text-slate-300 mx-auto mb-2" />
             <h4 className="text-xs font-bold text-slate-700 uppercase tracking-widest">No matching students found</h4>
             <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto">
-              We couldn't spot active students in {fromClass} ({fromSection}) for academic year {fromSession} cohort registers. Select alternative filters.
+              No active students matched the selected filters (Class: {fromClass}, Session: {fromSession}, Section: {fromSection}). Please select &apos;All Classes&apos; or &apos;All Sessions&apos; above.
             </p>
           </div>
         ) : (
@@ -691,7 +808,7 @@ export function StudentProgress() {
                     <input 
                       type="checkbox" 
                       className="rounded accent-indigo-600 cursor-pointer"
-                      checked={promotionRows.every(r => r.selected)}
+                      checked={promotionRows.length > 0 && promotionRows.every(r => r.selected)}
                       onChange={e => {
                         const checked = e.target.checked;
                         setPromotionRows(prev => prev.map(r => ({ ...r, selected: checked })));
@@ -699,6 +816,7 @@ export function StudentProgress() {
                     />
                   </th>
                   <th className="px-3 py-3">Student Informational Attributes</th>
+                  <th className="px-3 py-3">Current Class & Session</th>
                   <th className="px-3 py-3 w-36">Result status</th>
                   <th className="px-3 py-3 w-40">Promotion action</th>
                   <th className="px-3 py-3 w-28">New section</th>
@@ -726,8 +844,18 @@ export function StudentProgress() {
                           {row.studentName}
                         </div>
                         <div className="text-[10px] text-slate-400 font-mono mt-0.5">
-                          ID: {row.studentId} | Prev Roll: {row.rollNo}
+                          ID: {row.studentId} | Prev Roll: {row.rollNo || 'N/A'}
                         </div>
+                      </td>
+
+                      {/* Current Class & Session */}
+                      <td className="px-3 py-3">
+                        <span className="font-bold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded text-[10.5px]">
+                          {row.studentGrade}
+                        </span>
+                        <span className="block text-[9.5px] text-slate-400 font-mono mt-0.5">
+                          Session: {row.studentSession}
+                        </span>
                       </td>
 
                       {/* Result Status */}
@@ -756,7 +884,7 @@ export function StudentProgress() {
                           className="rounded border border-slate-200 bg-white px-1.5 py-1 text-[11px] font-bold text-slate-700 focus:outline-none focus:border-indigo-500 w-full"
                         >
                           <option value="Promote">Promote ({toClass})</option>
-                          <option value="Class Jump">⚡ Class Jump (Jump to {toClass} in same session)</option>
+                          <option value="Class Jump">⚡ Class Jump (Same session)</option>
                           <option value="Detain">Detain (Repeat Class)</option>
                           <option value="TC Issue">TC Issue (Leave)</option>
                           <option value="Dropout">Dropout</option>
@@ -771,7 +899,7 @@ export function StudentProgress() {
                           onChange={e => handleRowChange(row.studentId, { newSection: e.target.value })}
                           className="rounded border border-slate-200 bg-white px-1.5 py-1 text-[11px] font-bold text-slate-700 focus:outline-none focus:border-indigo-500 w-full disabled:bg-slate-100 disabled:text-slate-400"
                         >
-                          {SECTIONS.map(sec => (
+                          {TARGET_SECTIONS.map(sec => (
                             <option key={sec} value={sec}>Sec {sec}</option>
                           ))}
                         </select>

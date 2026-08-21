@@ -408,8 +408,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         section: historyEntry.section || s.section
       };
     }
-    // Otherwise return student so they are always accessible
-    return s;
+    // Otherwise, they were not admitted or promoted to this session, so do not show them
+    return null;
   }).filter(Boolean) as Student[];
   const filteredTeachers = isAdminPanel ? teachers : teachers.filter(t => t.schoolId === effectiveSchoolId);
   const filteredHomeworks = isAdminPanel ? homeworks : homeworks.filter(h => h.schoolId === effectiveSchoolId);
