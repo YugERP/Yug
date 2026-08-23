@@ -16,14 +16,7 @@ const getLocalStorageItem = <T,>(key: string, defaultValue: T): T => {
 
 // Initial Mock Data to seed Firestore on very first blank load
 const mockSchools: School[] = [
-  { 
-    id: 'sch1', 
-    name: 'Hogwarts School of Witchcraft and Wizardry', 
-    email: 'admin@school.edu',
-    adminPass: 'Admin@1234',
-    createdAt: new Date().toISOString(),
-    features: ['registration', 'fees', 'homework', 'attendance', 'marks', 'tc', 'idcard', 'admitcards', 'library', 'hostel', 'transport']
-  }
+  { id: 'sch1', name: 'Hogwarts School of Witchcraft and Wizardry', createdAt: new Date().toISOString() }
 ];
 
 const mockUsers: User[] = [
@@ -136,7 +129,7 @@ const seedMockDataToFirestore = async () => {
       console.log("Success seeding Firestore with initial mock data!");
     }
   } catch (err) {
-    console.log("Firestore seeding status: ready or cached in local storage.", err);
+    console.error("Error seeding mock data: ", err);
   }
 };
 
@@ -215,11 +208,11 @@ interface StoreContextType extends StoreState {
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [schools, setSchools] = useState<School[]>(() => getLocalStorageItem('sch_cached_schools', mockSchools));
-  const [users, setUsers] = useState<User[]>(() => getLocalStorageItem('sch_cached_users', mockUsers));
-  const [students, setStudents] = useState<Student[]>(() => getLocalStorageItem('sch_cached_students', mockStudents));
-  const [teachers, setTeachers] = useState<Teacher[]>(() => getLocalStorageItem('sch_cached_teachers', mockTeachers));
-  const [homeworks, setHomeworks] = useState<Homework[]>(() => getLocalStorageItem('sch_cached_homeworks', mockHomeworks));
+  const [schools, setSchools] = useState<School[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [homeworks, setHomeworks] = useState<Homework[]>([]);
   const [marks, setMarks] = useState<ExamMark[]>([]);
   const [feeRecords, setFeeRecords] = useState<FeeRecord[]>([]);
   const [issues, setIssues] = useState<Issue[]>([]);
@@ -240,10 +233,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const unsubSchools = onSnapshot(collection(db, 'schools'), (snap) => {
       const list: School[] = [];
       snap.forEach(doc => list.push(doc.data() as School));
-      if (list.length > 0) {
-        setSchools(list);
-        localStorage.setItem('sch_cached_schools', JSON.stringify(list));
-      }
+      setSchools(list);
     }, (error) => handleFirestoreError(error, OperationType.GET, 'schools'));
 
     const unsubSchoolConfigs = onSnapshot(collection(db, 'schoolConfig'), (snap) => {
@@ -500,85 +490,39 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   };
 
   const login = (emailOrUsername: string, pass: string) => {
-    const searchId = (emailOrUsername || '').toLowerCase().trim();
-    const cleanPass = (pass || '').trim();
-
-    // 1. Direct search across all registered users (Admin, Clerk, Teacher, Student, Parent, Master Admin)
+    const searchId = emailOrUsername.toLowerCase();
     const user = allUsers.find(u => {
-      const emailMatch = u.email && u.email.toLowerCase().trim() === searchId;
-      const usernameMatch = (u as any).username && (u as any).username.toLowerCase().trim() === searchId;
-      const mobileMatch = (u as any).mobile && String((u as any).mobile).trim() === searchId;
-      const srFallbackMatch = (u as any).srNo && `stud_${(u as any).srNo}`.toLowerCase().trim() === searchId;
-      return (emailMatch || usernameMatch || mobileMatch || srFallbackMatch) && u.password === cleanPass;
+      const emailMatch = u.email && u.email.toLowerCase() === searchId;
+      const usernameMatch = (u as any).username && (u as any).username.toLowerCase() === searchId;
+      const mobileMatch = (u as any).mobile && (u as any).mobile === searchId;
+      const srFallbackMatch = (u as any).srNo && `stud_${(u as any).srNo}`.toLowerCase() === searchId;
+      return (emailMatch || usernameMatch || mobileMatch || srFallbackMatch) && u.password === pass;
     });
-
     if (user) {
       setCurrentUser(user);
-      localStorage.setItem('sch_currentUser', JSON.stringify(user));
       return true;
     }
-
-    // 2. Direct School profile match fallback: allows school login by school email, id, or mobile with adminPass
-    const matchingSchool = schools.find(s => {
-      const emailMatch = s.email && s.email.toLowerCase().trim() === searchId;
-      const idMatch = s.id && s.id.toLowerCase().trim() === searchId;
-      const mobileMatch = s.mobile && s.mobile.trim() === searchId;
-      const nameMatch = s.name && s.name.toLowerCase().trim() === searchId;
-      return (emailMatch || idMatch || mobileMatch || nameMatch) && (s.adminPass === cleanPass || s.adminPass === pass);
-    });
-
-    if (matchingSchool) {
-      const schoolAdminUser: User = {
-        id: `admin_${matchingSchool.id}`,
-        name: `${matchingSchool.name} Admin`,
-        role: 'ADMIN',
-        email: matchingSchool.email || `${matchingSchool.id}@school.edu`,
-        schoolId: matchingSchool.id,
-        password: matchingSchool.adminPass || cleanPass
-      };
-      setCurrentUser(schoolAdminUser);
-      localStorage.setItem('sch_currentUser', JSON.stringify(schoolAdminUser));
-      return true;
-    }
-
     return false;
   };
 
-  const logout = () => {
-    setCurrentUser(null);
-    localStorage.removeItem('sch_currentUser');
-  };
+  const logout = () => setCurrentUser(null);
 
   const addSchool = async (payload: any) => {
     try {
       const newSchoolId = `sch${Date.now()}`;
-      const newSchoolDoc: School = { 
+      await setDoc(doc(db, 'schools', newSchoolId), { 
         id: newSchoolId, 
         name: payload.name,
-        address: payload.address || '',
-        mobile: payload.mobile || '',
-        altMobile: payload.altMobile || '',
-        udiseCode: payload.udiseCode || '',
-        email: payload.adminEmail || '',
-        adminEmail: payload.adminEmail || '',
-        adminPass: payload.adminPass || '',
+        address: payload.address,
+        mobile: payload.mobile,
+        altMobile: payload.altMobile,
+        udiseCode: payload.udiseCode,
+        email: payload.adminEmail,
         logo: payload.logo || '',
         createdAt: new Date().toISOString(),
-        features: ['registration', 'fees', 'homework', 'attendance', 'marks', 'tc', 'idcard', 'admitcards'] 
-      };
-
-      const adminUserId = `a${Date.now()}`;
-      const newAdminUser: User = { 
-        id: adminUserId, 
-        name: `${payload.name} Admin`, 
-        role: 'ADMIN', 
-        email: payload.adminEmail, 
-        password: payload.adminPass, 
-        schoolId: newSchoolId 
-      };
-
-      await setDoc(doc(db, 'schools', newSchoolId), newSchoolDoc);
-      await setDoc(doc(db, 'users', adminUserId), newAdminUser);
+        features: ['registration', 'fees', 'homework', 'attendance', 'marks', 'tc', 'idcard'] 
+      });
+      await setDoc(doc(db, 'users', `a${Date.now()}`), { id: `a${Date.now()}`, name: 'School Admin', role: 'ADMIN', email: payload.adminEmail, password: payload.adminPass, schoolId: newSchoolId });
       await setDoc(doc(db, 'classFees', newSchoolId), { schoolId: newSchoolId, fees: {} });
       await setDoc(doc(db, 'schoolConfig', newSchoolId), {
         schoolId: newSchoolId,
@@ -586,21 +530,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         academicSessions: getLifetimeSessions(),
         allowedSessions: getLifetimeSessions()
       });
-
-      // Optimistically update state and cache immediately
-      setSchools(prev => {
-        const next = [...prev.filter(s => s.id !== newSchoolId), newSchoolDoc];
-        localStorage.setItem('sch_cached_schools', JSON.stringify(next));
-        return next;
-      });
-      setUsers(prev => {
-        const next = [...prev.filter(u => u.id !== adminUserId), newAdminUser];
-        localStorage.setItem('sch_cached_users', JSON.stringify(next));
-        return next;
-      });
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, 'schools');
-      throw err;
     }
   };
 
@@ -609,62 +540,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const { adminPass, ...rawUpdates } = updates;
       
       // Clean undefined values before Firebase update
-      const schoolUpdates: any = Object.fromEntries(Object.entries(rawUpdates).filter(([_, v]) => v !== undefined));
-      if (adminPass !== undefined) {
-        schoolUpdates.adminPass = adminPass;
-      }
+      const schoolUpdates = Object.fromEntries(Object.entries(rawUpdates).filter(([_, v]) => v !== undefined));
       
-      // 1. Update or merge school record in Firestore
-      await setDoc(doc(db, 'schools', id), schoolUpdates, { merge: true });
+      // Update school itself
+      if (Object.keys(schoolUpdates).length > 0) {
+        await updateDoc(doc(db, 'schools', id), schoolUpdates);
+      }
 
-      // Immediate local state update
-      setSchools(prev => {
-        const exists = prev.some(s => s.id === id);
-        const updated = exists 
-          ? prev.map(s => s.id === id ? { ...s, ...schoolUpdates } : s)
-          : [...prev, { id, name: 'School', createdAt: new Date().toISOString(), ...schoolUpdates } as School];
-        localStorage.setItem('sch_cached_schools', JSON.stringify(updated));
-        return updated;
-      });
-
-      // 2. Handle admin credentials synchronization
-      const targetEmail = schoolUpdates.email || updates.email;
-      const targetPass = adminPass || schoolUpdates.adminPass;
-
-      if (targetEmail !== undefined || targetPass !== undefined) {
-        // Find existing admin user for this school
-        let adminUser = users.find(u => u.schoolId === id && u.role === 'ADMIN');
-        const adminDocId = adminUser ? adminUser.id : `admin_${id}`;
-        
-        const userUpdates: User = {
-          id: adminDocId,
-          role: 'ADMIN',
-          schoolId: id,
-          name: adminUser?.name || `${schoolUpdates.name || 'School'} Admin`,
-          email: targetEmail || adminUser?.email || `${id}@school.edu`,
-          password: targetPass !== undefined ? targetPass : (adminUser?.password || 'Admin@1234')
-        };
-
-        if (schoolUpdates.name) {
-          userUpdates.name = `${schoolUpdates.name} Admin`;
-        }
-
-        await setDoc(doc(db, 'users', adminDocId), userUpdates, { merge: true });
-
-        setUsers(prev => {
-          const exists = prev.some(u => u.id === adminDocId || (u.schoolId === id && u.role === 'ADMIN'));
-          const updated = exists
-            ? prev.map(u => (u.id === adminDocId || (u.schoolId === id && u.role === 'ADMIN')) ? { ...u, ...userUpdates } : u)
-            : [...prev, userUpdates];
-          localStorage.setItem('sch_cached_users', JSON.stringify(updated));
-          return updated;
-        });
-
-        // If currently logged in user is this school's admin, update currentUser state
-        if (currentUser && (currentUser.id === adminDocId || (currentUser.schoolId === id && currentUser.role === 'ADMIN'))) {
-          const updatedCur = { ...currentUser, ...userUpdates };
-          setCurrentUser(updatedCur);
-          localStorage.setItem('sch_currentUser', JSON.stringify(updatedCur));
+      // Handle admin credentials if email or pass changed
+      if (schoolUpdates.email || adminPass) {
+        // Find the admin user for this school
+        const adminUser = users.find(u => u.schoolId === id && u.role === 'ADMIN');
+        if (adminUser) {
+          const userUpdates: any = {};
+          if (schoolUpdates.email) userUpdates.email = schoolUpdates.email;
+          if (adminPass) userUpdates.password = adminPass;
+          
+          await updateDoc(doc(db, 'users', adminUser.id), userUpdates);
         }
       }
     } catch (err) {

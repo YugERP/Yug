@@ -16,6 +16,16 @@ function AppContent() {
     return <Login />;
   }
 
+  // Prevent rendering before school metadata is loaded from Firestore to avoid layout flicker
+  if (schools.length === 0) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 space-y-3">
+        <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-sm font-bold text-slate-500 tracking-wider uppercase">Loading Workspace...</p>
+      </div>
+    );
+  }
+
   const getDashboardTitle = () => {
     switch (currentUser.role) {
       case 'MASTER_ADMIN': return 'Super Administrator Console';
