@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useStore } from '../store';
 import { Card, Button, Label, Input } from '../components/UI';
 import { 
@@ -17,7 +17,14 @@ import {
   Check,
   FileText,
   Edit,
-  TrendingUp
+  TrendingUp,
+  Settings,
+  Key,
+  Eye,
+  EyeOff,
+  Lock,
+  Save,
+  ShieldCheck
 } from 'lucide-react';
 import type { Student, Teacher, User, ExamMark } from '../types';
 import { StudentReportCard } from '../components/StudentReportCard';
@@ -41,6 +48,7 @@ export function AdminPanel() {
   const { 
     currentUser,
     schools,
+    updateSchool,
     students, 
     teachers, 
     users, 
@@ -83,9 +91,42 @@ export function AdminPanel() {
     | 'teachers' 
     | 'clerks' 
     | 'issues'
-    | 'parents';
+    | 'parents'
+    | 'profile';
 
   const [activeTab, setActiveTab] = useState<ERP_TAB>('overview');
+
+  const currentSchool = schools.find(s => s.id === (currentUser?.schoolId || ''));
+  const schoolAdminUser = users.find(u => u.schoolId === (currentUser?.schoolId || '') && u.role === 'ADMIN');
+
+  const [profileForm, setProfileForm] = useState({
+    name: '',
+    address: '',
+    mobile: '',
+    altMobile: '',
+    udiseCode: '',
+    email: '',
+    adminPass: '',
+    logo: ''
+  });
+  const [showProfilePassword, setShowProfilePassword] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [profileSaveSuccess, setProfileSaveSuccess] = useState(false);
+
+  useEffect(() => {
+    if (currentSchool) {
+      setProfileForm({
+        name: currentSchool.name || '',
+        address: currentSchool.address || '',
+        mobile: currentSchool.mobile || '',
+        altMobile: currentSchool.altMobile || '',
+        udiseCode: currentSchool.udiseCode || '',
+        email: currentSchool.email || schoolAdminUser?.email || currentUser?.email || '',
+        adminPass: currentSchool.adminPass || schoolAdminUser?.password || currentUser?.password || '',
+        logo: currentSchool.logo || ''
+      });
+    }
+  }, [currentSchool, schoolAdminUser, currentUser]);
 
   const [newTeacher, setNewTeacher] = useState<Partial<Teacher>>({ role: 'TEACHER', subjects: [], password: 'password123' });
   const [newClerk, setNewClerk] = useState<Partial<User>>({ role: 'CLERK', password: 'password123' });
@@ -311,7 +352,6 @@ export function AdminPanel() {
     e.target.value = '';
   };
 
-  const currentSchool = schools.find(s => s.id === (currentUser?.schoolId || ''));
   const activeFeatures = currentSchool?.features;
   const checkFeature = (id: string) => !currentSchool || !activeFeatures || activeFeatures.includes(id);
 
@@ -330,6 +370,7 @@ export function AdminPanel() {
     { id: 'parents', name: 'Parent Accounts', icon: Users, show: true },
     { id: 'teachers', name: 'Teacher catalog', icon: Users, show: true },
     { id: 'clerks', name: 'Staff coordinators', icon: Users, show: true },
+    { id: 'profile', name: 'School Profile & Password', icon: Settings, show: true },
     { id: 'issues', name: 'Admin support issues', icon: AlertCircle, show: true },
   ].filter(t => t.show);
 
@@ -1109,6 +1150,226 @@ export function AdminPanel() {
               ))}
             </div>
           )}
+        </Card>
+      )}
+
+      {/* SCHOOL PROFILE & CREDENTIALS TAB */}
+      {activeTab === 'profile' && (
+        <Card className="p-6 no-print max-w-4xl mx-auto border-2 border-indigo-100 shadow-md">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-6">
+            <div className="flex items-center gap-3">
+              <div className="bg-indigo-600 text-white p-3 rounded-xl shadow-md">
+                <Building className="w-6 h-6" />
+              </div>
+              <div>
+                <h2 className="text-lg font-black text-slate-800 uppercase tracking-tight">
+                  School Profile & Password Settings (स्कूल प्रोफ़ाइल एवं पासवर्ड)
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Update institution identification, contact details, and administrator login credentials.
+                </p>
+              </div>
+            </div>
+
+            {currentSchool && (
+              <span className="bg-indigo-50 text-indigo-700 font-mono font-bold text-xs px-3 py-1.5 rounded-lg border border-indigo-200">
+                School ID: {currentSchool.id}
+              </span>
+            )}
+          </div>
+
+          {profileSaveSuccess && (
+            <div className="mb-6 p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-3 text-emerald-800 text-xs font-semibold animate-fade-in">
+              <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+              <span>स्कूल प्रोफ़ाइल एवं पासवर्ड सफलतापूर्वक सुरक्षित सेव हो गया है! (School Profile & Password updated successfully!)</span>
+            </div>
+          )}
+
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!currentSchool) return;
+              try {
+                setIsSavingProfile(true);
+                await updateSchool(currentSchool.id, profileForm);
+                setProfileSaveSuccess(true);
+                setTimeout(() => setProfileSaveSuccess(false), 5000);
+                alert("School Profile & Password saved successfully!");
+              } catch (err: any) {
+                alert("Error saving profile: " + (err.message || String(err)));
+              } finally {
+                setIsSavingProfile(false);
+              }
+            }}
+            className="space-y-6"
+          >
+            {/* Section 1: Institution Details */}
+            <div className="space-y-4">
+              <h3 className="text-xs font-black text-indigo-900 uppercase tracking-wider flex items-center gap-2">
+                <span className="w-2 h-4 bg-indigo-600 rounded-full"></span>
+                1. Institution General Information (संस्थान का विवरण)
+              </h3>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <Label className="text-xs font-bold text-slate-700">School / College Name (विद्यालय का नाम)</Label>
+                  <Input
+                    type="text"
+                    value={profileForm.name}
+                    onChange={e => setProfileForm({ ...profileForm, name: e.target.value })}
+                    required
+                    placeholder="Enter full school name"
+                    className="font-bold text-sm"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <Label className="text-xs font-bold text-slate-700">Complete Address (विद्यालय का पूरा पता)</Label>
+                  <Input
+                    type="text"
+                    value={profileForm.address}
+                    onChange={e => setProfileForm({ ...profileForm, address: e.target.value })}
+                    placeholder="e.g. Near City Station, Main Road, District, State - PIN"
+                  />
+                </div>
+
+                <div>
+                  <Label className="text-xs font-bold text-slate-700">Primary Mobile No. (मुख्य मोबाइल नंबर)</Label>
+                  <Input
+                    type="text"
+                    value={profileForm.mobile}
+                    onChange={e => setProfileForm({ ...profileForm, mobile: e.target.value })}
+                    placeholder="e.g. 9876543210"
+                    className="font-mono text-xs"
+                  />
+                </div>
+
+                <div>
+                  <Label className="text-xs font-bold text-slate-700">Alternate Contact No. (अतिरिक्त मोबाइल)</Label>
+                  <Input
+                    type="text"
+                    value={profileForm.altMobile}
+                    onChange={e => setProfileForm({ ...profileForm, altMobile: e.target.value })}
+                    placeholder="e.g. 9876500000"
+                    className="font-mono text-xs"
+                  />
+                </div>
+
+                <div>
+                  <Label className="text-xs font-bold text-slate-700">UDISE / Affiliation Code (यू-डायस कोड)</Label>
+                  <Input
+                    type="text"
+                    value={profileForm.udiseCode}
+                    onChange={e => setProfileForm({ ...profileForm, udiseCode: e.target.value })}
+                    placeholder="e.g. 09123456789"
+                    className="font-mono text-xs"
+                  />
+                </div>
+
+                <div>
+                  <Label className="text-xs font-bold text-slate-700">School Logo (लोगो अपलोड करें)</Label>
+                  <div className="flex items-center gap-3">
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          if (file.size > 1.5 * 1024 * 1024) {
+                            alert("Logo image size should be less than 1.5MB");
+                            return;
+                          }
+                          const reader = new FileReader();
+                          reader.onload = () => {
+                            setProfileForm(prev => ({ ...prev, logo: reader.result as string }));
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                      className="text-xs cursor-pointer"
+                    />
+                    {profileForm.logo && (
+                      <img
+                        src={profileForm.logo}
+                        alt="Logo Preview"
+                        className="w-12 h-12 object-contain border-2 border-indigo-200 rounded-lg p-1 bg-white shrink-0"
+                      />
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Section 2: Admin Login & Password Security */}
+            <div className="space-y-4 pt-4 border-t border-slate-100">
+              <h3 className="text-xs font-black text-indigo-900 uppercase tracking-wider flex items-center gap-2">
+                <span className="w-2 h-4 bg-amber-500 rounded-full"></span>
+                2. Admin Portal Login & Password (एडमिन लॉगिन आईडी एवं पासवर्ड)
+              </h3>
+
+              <div className="bg-gradient-to-r from-amber-50/70 to-orange-50/50 p-4 rounded-xl border border-amber-200 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                      <Key className="w-3.5 h-3.5 text-amber-600" />
+                      Admin Login ID / E-mail (लॉगिन आईडी)
+                    </Label>
+                    <Input
+                      type="text"
+                      value={profileForm.email}
+                      onChange={e => setProfileForm({ ...profileForm, email: e.target.value })}
+                      required
+                      placeholder="e.g. admin@school.edu"
+                      className="font-mono text-xs bg-white font-semibold"
+                    />
+                    <span className="text-[10px] text-slate-500 mt-1 block">
+                      Use this ID to login at the school admin portal.
+                    </span>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                        <Lock className="w-3.5 h-3.5 text-amber-600" />
+                        Admin Password (लॉगिन पासवर्ड)
+                      </Label>
+                      <button
+                        type="button"
+                        onClick={() => setShowProfilePassword(!showProfilePassword)}
+                        className="text-[11px] text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1"
+                      >
+                        {showProfilePassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        {showProfilePassword ? "Hide Password" : "Show Password"}
+                      </button>
+                    </div>
+                    <Input
+                      type={showProfilePassword ? "text" : "password"}
+                      value={profileForm.adminPass}
+                      onChange={e => setProfileForm({ ...profileForm, adminPass: e.target.value })}
+                      required
+                      placeholder="Enter new admin password"
+                      className="font-mono text-xs bg-white font-semibold"
+                    />
+                    <span className="text-[10px] text-slate-500 mt-1 block">
+                      Saved password will persist and allow seamless login across devices.
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Save Button */}
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+              <Button
+                type="submit"
+                disabled={isSavingProfile}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs py-3 px-6 rounded-xl flex items-center gap-2 shadow-md uppercase tracking-wider"
+              >
+                <Save className="w-4 h-4" />
+                <span>{isSavingProfile ? "Saving Profile..." : "Save Profile & Password (सुरक्षित सेव करें)"}</span>
+              </Button>
+            </div>
+          </form>
         </Card>
       )}
 

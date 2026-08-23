@@ -8,6 +8,8 @@ export interface School {
   altMobile?: string;
   udiseCode?: string;
   email?: string;
+  adminPass?: string;
+  adminEmail?: string;
   createdAt: string;
   features?: string[]; // Allowed module features
   logo?: string;

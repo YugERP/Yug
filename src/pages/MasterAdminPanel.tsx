@@ -5,7 +5,8 @@ import {
   School, Building, Plus, Trash2, Download, Upload, FileJson, FileText, 
   CheckCircle2, AlertTriangle, Edit, X, Cloud, Copy, Check, Clock, 
   RefreshCw, ExternalLink, Database, FileSpreadsheet, HardDrive, 
-  ShieldCheck, Image as ImageIcon, Sparkles, FolderSync, CheckCircle 
+  ShieldCheck, Image as ImageIcon, Sparkles, FolderSync, CheckCircle,
+  Eye, EyeOff, LogIn, Key, Lock
 } from 'lucide-react';
 import { doc, setDoc, getDoc, collection, onSnapshot, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -15,6 +16,7 @@ export function MasterAdminPanel() {
   const { 
     schools, 
     users, 
+    setCurrentUser,
     addSchool, 
     updateSchool,
     updateSchoolFeatures,
@@ -52,6 +54,8 @@ export function MasterAdminPanel() {
 
   const [editingSchool, setEditingSchool] = useState<any>(null);
   const [schoolEditForm, setSchoolEditForm] = useState<any>({});
+  const [showEditPassword, setShowEditPassword] = useState(true);
+  const [showPasswordMap, setShowPasswordMap] = useState<Record<string, boolean>>({});
 
   // Session Config States
   const [sessionConfigTarget, setSessionConfigTarget] = useState('2026-27');
@@ -1177,10 +1181,14 @@ export function MasterAdminPanel() {
             <tbody className="divide-y divide-slate-100">
               {schools.filter(school => selectedSchoolId === 'all' || school.id === selectedSchoolId).map(school => {
                 const schoolAdmins = users.filter(u => u.schoolId === school.id && u.role === 'ADMIN');
+                const adminUsr = schoolAdmins[0];
                 const schoolStudents = students.filter(s => (s.schoolId === school.id || (!s.schoolId && school.id === 'sch1')) && !s.isDeleted);
                 const schoolFees = feeRecords.filter(f => f.schoolId === school.id && schoolStudents.some(s => s.id === f.studentId));
                 
                 const schoolFeatures = pendingFeaturesMap[school.id] ?? school.features ?? [];
+                const effectiveEmail = school.email || adminUsr?.email || 'admin@school.edu';
+                const effectivePass = adminUsr?.password || school.adminPass || 'Admin@1234';
+                const isPassVisible = showPasswordMap[school.id] ?? false;
 
                 const toggleFeature = (featureId: string) => {
                   const newFeatures = schoolFeatures.includes(featureId)
@@ -1194,19 +1202,62 @@ export function MasterAdminPanel() {
                   alert('Services updated successfully!');
                 };
 
+                const handleDirectLogin = () => {
+                  const targetAdmin: any = adminUsr || {
+                    id: `admin_${school.id}`,
+                    name: `${school.name} Admin`,
+                    role: 'ADMIN',
+                    email: effectiveEmail,
+                    password: effectivePass,
+                    schoolId: school.id
+                  };
+                  setCurrentUser(targetAdmin);
+                  localStorage.setItem('sch_currentUser', JSON.stringify(targetAdmin));
+                };
+
                 return (
                   <tr key={school.id} className="hover:bg-slate-50">
                     <td className="px-4 py-3 font-semibold text-slate-800">
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-start gap-3">
                         {school.logo ? (
-                          <img src={school.logo} alt="Logo" className="w-10 h-10 object-contain border rounded bg-white p-0.5" />
+                          <img src={school.logo} alt="Logo" className="w-10 h-10 object-contain border rounded bg-white p-0.5 mt-1 shrink-0" />
                         ) : (
-                          <div className="w-10 h-10 border rounded bg-slate-100 flex items-center justify-center text-slate-400 text-xs">No Logo</div>
+                          <div className="w-10 h-10 border rounded bg-slate-100 flex items-center justify-center text-slate-400 text-xs mt-1 shrink-0">No Logo</div>
                         )}
-                        <div>
-                          {school.name}
-                          <div className="text-[10px] text-slate-500 font-normal font-mono mt-0.5">{school.id}</div>
-                          <div className="text-[10px] text-slate-500 font-normal mt-0.5">Admin: {schoolAdmins.map(a => a.email).join(', ')}</div>
+                        <div className="space-y-1">
+                          <div className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
+                            {school.name}
+                            <span className="text-[10px] bg-slate-100 text-slate-600 font-mono px-1.5 py-0.5 rounded border border-slate-200">{school.id}</span>
+                          </div>
+                          
+                          {/* Credentials Badges */}
+                          <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                            <div className="inline-flex items-center gap-1 text-[10.5px] bg-blue-50 text-blue-800 border border-blue-200 px-2 py-0.5 rounded-md font-medium">
+                              <span className="text-blue-500 font-bold">ID:</span>
+                              <span className="font-mono font-semibold">{effectiveEmail}</span>
+                            </div>
+
+                            <div className="inline-flex items-center gap-1 text-[10.5px] bg-amber-50 text-amber-900 border border-amber-200 px-2 py-0.5 rounded-md font-medium">
+                              <Key className="w-3 h-3 text-amber-600 shrink-0" />
+                              <span className="font-mono font-semibold">
+                                {isPassVisible ? effectivePass : '••••••••'}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setShowPasswordMap(prev => ({ ...prev, [school.id]: !isPassVisible }))}
+                                className="ml-1 text-amber-700 hover:text-amber-900 p-0.5"
+                                title={isPassVisible ? "Hide Password" : "Show Password"}
+                              >
+                                {isPassVisible ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                              </button>
+                            </div>
+                          </div>
+
+                          {school.mobile && (
+                            <div className="text-[10px] text-slate-500">
+                              Tel: <span className="font-mono">{school.mobile}</span> {school.altMobile ? `/ ${school.altMobile}` : ''}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </td>
@@ -1236,28 +1287,35 @@ export function MasterAdminPanel() {
                       </button>
                     </td>
                     <td className="px-4 py-3 text-right align-top">
-                      <div className="flex flex-col gap-2 w-max ml-auto">
+                      <div className="flex flex-col gap-1.5 w-max ml-auto">
+                        <Button 
+                          onClick={handleDirectLogin} 
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white p-1.5 h-auto text-xs flex items-center justify-center gap-1 w-full shadow-sm font-bold"
+                          title="Switch into this school's admin dashboard directly"
+                        >
+                          <LogIn className="w-3 h-3" /> Login Portal
+                        </Button>
                         <Button onClick={() => {
-                          const adminUsr = users.find(u => u.schoolId === school.id && u.role === 'ADMIN');
                           setEditingSchool(school);
+                          setShowEditPassword(true);
                           setSchoolEditForm({
                             name: school.name,
-                            address: school.address,
-                            mobile: school.mobile,
-                            altMobile: school.altMobile,
-                            udiseCode: school.udiseCode,
-                            email: school.email,
+                            address: school.address || '',
+                            mobile: school.mobile || '',
+                            altMobile: school.altMobile || '',
+                            udiseCode: school.udiseCode || '',
+                            email: effectiveEmail,
                             logo: school.logo || '',
-                            adminPass: adminUsr ? adminUsr.password : ''
+                            adminPass: effectivePass
                           });
-                        }} className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 p-1.5 h-auto text-xs flex items-center justify-center gap-1 w-full">
+                        }} className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 p-1.5 h-auto text-xs flex items-center justify-center gap-1 w-full font-medium">
                           <Edit className="w-3 h-3" /> Edit Info
                         </Button>
                         <Button onClick={() => {
                           if (window.confirm(`Are you sure you want to completely delete ${school.name}? This will remove all their data permanently.`)) {
                             deleteSchool(school.id);
                           }
-                        }} className="bg-rose-50 text-rose-600 hover:bg-rose-100 p-1.5 h-auto text-xs flex items-center justify-center gap-1 w-full">
+                        }} className="bg-rose-50 text-rose-600 hover:bg-rose-100 p-1.5 h-auto text-xs flex items-center justify-center gap-1 w-full font-medium">
                           <Trash2 className="w-3 h-3" /> Remove
                         </Button>
                       </div>
@@ -2220,21 +2278,38 @@ function saveToGoogleDrive(schoolName, data) {
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-3 rounded-lg border border-slate-200">
                 <div>
-                  <Label>Admin E-mail</Label>
-                  <Input 
-                    value={schoolEditForm.email || ''} 
-                    onChange={e => setSchoolEditForm({...schoolEditForm, email: e.target.value})} 
-                  />
-                </div>
-                <div>
-                  <Label>Admin Password</Label>
+                  <Label className="text-xs font-bold text-slate-700">Admin Login ID / E-mail</Label>
                   <Input 
                     type="text"
+                    value={schoolEditForm.email || ''} 
+                    onChange={e => setSchoolEditForm({...schoolEditForm, email: e.target.value})} 
+                    placeholder="e.g. admin@school.edu"
+                    className="font-mono text-xs"
+                  />
+                  <span className="text-[10px] text-slate-500">School Admin username/email</span>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-bold text-slate-700">Admin Password</Label>
+                    <button
+                      type="button"
+                      onClick={() => setShowEditPassword(!showEditPassword)}
+                      className="text-[10.5px] text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1"
+                    >
+                      {showEditPassword ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                      {showEditPassword ? "Hide" : "Show"}
+                    </button>
+                  </div>
+                  <Input 
+                    type={showEditPassword ? "text" : "password"}
                     value={schoolEditForm.adminPass || ''} 
                     onChange={e => setSchoolEditForm({...schoolEditForm, adminPass: e.target.value})} 
+                    placeholder="Enter password"
+                    className="font-mono text-xs"
                   />
+                  <span className="text-[10px] text-slate-500">Visible for Super Admin</span>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -2256,14 +2331,14 @@ function saveToGoogleDrive(schoolName, data) {
                   try {
                     await updateSchool(editingSchool.id, schoolEditForm);
                     setEditingSchool(null);
-                    alert("School updated successfully.");
+                    alert("School profile and Admin password updated and saved successfully!");
                   } catch (e: any) {
                     alert("Error updating school: " + e.message);
                   }
                 }} 
-                className="w-full mt-4"
+                className="w-full mt-4 bg-indigo-600 hover:bg-indigo-700 font-bold"
               >
-                Save Changes
+                Save Changes (सेव करें)
               </Button>
             </div>
           </div>
