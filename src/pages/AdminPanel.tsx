@@ -17,11 +17,17 @@ import {
   Check,
   FileText,
   Edit,
-  TrendingUp
+  TrendingUp,
+  AlertTriangle,
+  HelpCircle,
+  X,
+  ShieldCheck,
+  CheckCheck,
+  UploadCloud
 } from 'lucide-react';
 import type { Student, Teacher, User, ExamMark } from '../types';
 import { StudentReportCard } from '../components/StudentReportCard';
-import { normalizeGrade, isSameGrade, getDefaultSubjectsForGrade } from '../utils/gradeHelper';
+import { normalizeGrade, isSameGrade, getDefaultSubjectsForGrade, parseExamHeader, normalizeSubject, isSameSubject } from '../utils/gradeHelper';
 
 // ERP modular components import
 import { StudentRegistration } from '../components/erp/StudentRegistration';
@@ -102,6 +108,27 @@ export function AdminPanel() {
   const [studentClassFilter, setStudentClassFilter] = useState('All');
   const [showRegFormOption, setShowRegFormOption] = useState(false);
 
+  // CSV Import with Duplicate Resolution Dialog State
+  interface DuplicateImportItem {
+    incomingStudent: Student;
+    existingStudent: Student;
+    marks: Omit<ExamMark, 'id' | 'date' | 'schoolId'>[];
+    matchReason: string;
+  }
+
+  interface NewImportItem {
+    student: Student;
+    marks: Omit<ExamMark, 'id' | 'date' | 'schoolId'>[];
+  }
+
+  interface CsvImportPromptState {
+    newItems: NewImportItem[];
+    duplicateItems: DuplicateImportItem[];
+    totalRows: number;
+  }
+
+  const [csvImportPrompt, setCsvImportPrompt] = useState<CsvImportPromptState | null>(null);
+
   const classes = ['All', 'Nursery', 'L.K.G', 'U.K.G', 'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5', 'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10', 'Class 11', 'Class 12'];
 
   const sortedStudentsToDisplay = [...students].reverse();
@@ -173,6 +200,79 @@ export function AdminPanel() {
     link.click();
   };
 
+  // Helper to detect if an incoming student is a duplicate of any existing student
+  const findDuplicateStudentMatch = (incoming: Partial<Student>): { existing: Student; reason: string } | null => {
+    for (const existing of students) {
+      if (existing.isDeleted) continue;
+
+      // 1. Match by SR Number (if non-empty and not dummy)
+      if (
+        incoming.srNo && 
+        existing.srNo && 
+        incoming.srNo.trim().toLowerCase() === existing.srNo.trim().toLowerCase()
+      ) {
+        return { 
+          existing, 
+          reason: `SR No "${existing.srNo}" (मौजूदा छात्र: ${existing.name}, ${existing.grade})` 
+        };
+      }
+
+      // 2. Match by Admission Number (if non-empty and not dummy)
+      if (
+        incoming.admissionNo && 
+        existing.admissionNo && 
+        incoming.admissionNo.trim().toLowerCase() === existing.admissionNo.trim().toLowerCase()
+      ) {
+        return { 
+          existing, 
+          reason: `Admission No "${existing.admissionNo}" (मौजूदा छात्र: ${existing.name}, ${existing.grade})` 
+        };
+      }
+
+      // 3. Match by Name + Father Name + Class/Grade
+      if (
+        incoming.name && existing.name &&
+        incoming.name.trim().toLowerCase() === existing.name.trim().toLowerCase() &&
+        (incoming.fatherName || '').trim().toLowerCase() === (existing.fatherName || '').trim().toLowerCase() &&
+        isSameGrade(incoming.grade, existing.grade)
+      ) {
+        return { 
+          existing, 
+          reason: `कक्षा ${existing.grade} में छात्र "${existing.name}" व पिता "${existing.fatherName || 'N/A'}" पहले से पंजीकृत हैं` 
+        };
+      }
+
+      // 4. Match by Name + Father Name + Mother Name + Mobile
+      if (
+        incoming.name && existing.name &&
+        incoming.name.trim().toLowerCase() === existing.name.trim().toLowerCase() &&
+        (incoming.fatherName || '').trim().toLowerCase() === (existing.fatherName || '').trim().toLowerCase() &&
+        (incoming.motherName || '').trim().toLowerCase() === (existing.motherName || '').trim().toLowerCase() &&
+        (incoming.mobile || '').trim() && (existing.mobile || '').trim() &&
+        (incoming.mobile || '').trim() === (existing.mobile || '').trim()
+      ) {
+        return { 
+          existing, 
+          reason: `छात्र नाम, माता-पिता का नाम और मोबाइल नंबर (${existing.mobile}) पूर्णतः समान है` 
+        };
+      }
+
+      // 5. Match by Class + Roll No (in same academic session)
+      if (
+        isSameGrade(incoming.grade, existing.grade) &&
+        incoming.rollNo && existing.rollNo &&
+        String(incoming.rollNo).trim() === String(existing.rollNo).trim() &&
+        (incoming.academicSession || activeAcademicSession || '') === (existing.academicSession || activeAcademicSession || '')
+      ) {
+        return { 
+          existing, 
+          reason: `सत्र ${existing.academicSession || activeAcademicSession} में कक्षा ${existing.grade} का रोल नंबर #${existing.rollNo} पहले से छात्र "${existing.name}" के पास है` 
+        };
+      }
+    }
+    return null;
+  };
+
   const handleStudentsCsvImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -220,95 +320,201 @@ export function AdminPanel() {
           return '';
         };
 
-        const marksToImport: Omit<ExamMark, 'id' | 'date' | 'schoolId'>[] = [];
         const currentSession = activeAcademicSession || '2025-26';
-        
-        const parsedStudents = lines.slice(1).map((line, lineIdx) => {
-           if (!line.trim()) return null;
-           const cols = parseLine(line);
-           if (cols.length < 2) return null;
+        const newItems: NewImportItem[] = [];
+        const duplicateItems: DuplicateImportItem[] = [];
 
-           const studentId = `s_${Date.now()}_${lineIdx}_${Math.random().toString().slice(2, 6)}`;
-           
-           const rawName = getCol(cols, ['name', 'studentname', 'student_name', 'fullname', 'candidate_name'], 2) || (cols.length > 0 ? cols[0] : '');
-           if (!rawName) return null;
+        lines.slice(1).forEach((line, lineIdx) => {
+          if (!line.trim()) return;
+          const cols = parseLine(line);
+          if (cols.length < 2) return;
 
-           const rawGrade = getCol(cols, ['class', 'grade', 'std', 'standard', 'classname'], 11) || (cols.length > 1 ? cols[1] : 'Class 1');
-           const normalizedGrade = normalizeGrade(rawGrade);
+          const rawName = getCol(cols, ['name', 'studentname', 'student_name', 'fullname', 'candidate_name'], 2) || (cols.length > 0 ? cols[0] : '');
+          if (!rawName) return;
 
-           const rawSession = getCol(cols, ['academicsession', 'session', 'academic_session', 'year', 'sessionyear'], 13);
-           const studentSession = rawSession ? rawSession.trim() : currentSession;
+          const rawGrade = getCol(cols, ['class', 'grade', 'std', 'standard', 'classname'], 11) || (cols.length > 1 ? cols[1] : 'Class 1');
+          const normalizedGrade = normalizeGrade(rawGrade);
 
-           const rawStream = getCol(cols, ['stream', 'group', 'branch', 'faculty'], 15);
-           const rawRoll = getCol(cols, ['rollno', 'roll_no', 'roll', 'examrollno', 'rollnumber'], 12) || String(lineIdx + 1);
-           const rawSr = getCol(cols, ['srno', 'sr_no', 'sr', 'serialno', 'srnumber'], 0) || `SR-${1000 + lineIdx + 1}`;
-           const rawAdm = getCol(cols, ['admissionno', 'admission_no', 'admno', 'adm_no', 'regno', 'registrationno'], 1) || `ADM-${5000 + lineIdx + 1}`;
+          const rawSession = getCol(cols, ['academicsession', 'session', 'academic_session', 'year', 'sessionyear'], 13);
+          const studentSession = rawSession ? rawSession.trim() : currentSession;
 
-           const student: Student = {
-              role: 'STUDENT',
-              id: studentId,
-              schoolId: currentUser?.schoolId || '',
-              srNo: rawSr,
-              admissionNo: rawAdm,
-              name: rawName,
-              gender: (getCol(cols, ['gender', 'sex'], 3) as any) || 'Male',
-              fatherName: getCol(cols, ['father', 'fathername', 'fathersname', 'father_name'], 4),
-              motherName: getCol(cols, ['mother', 'mothername', 'mothersname', 'mother_name'], 5),
-              dob: getCol(cols, ['dob', 'dateofbirth', 'birthdate'], 6),
-              mobile: getCol(cols, ['mobile', 'phone', 'contact', 'mobileno', 'phoneno'], 7),
-              aadhar: getCol(cols, ['aadhar', 'aadharno', 'aadhaar', 'uid'], 8),
-              email: getCol(cols, ['email', 'emailid'], 9),
-              address: getCol(cols, ['address', 'fulladdress', 'addr'], 10),
-              grade: normalizedGrade,
-              rollNo: rawRoll,
-              academicSession: studentSession,
-              previousClass: getCol(cols, ['previousclass', 'prevclass', 'prev_class'], 14),
-              stream: rawStream as any,
-              password: getCol(cols, ['password', 'pwd'], 16) || 'password123',
-              feeBalance: Number(getCol(cols, ['feebalance', 'fee_balance', 'dues', 'balance'], 17) || 0),
-              subjects: getDefaultSubjectsForGrade(normalizedGrade, rawStream),
-              isDeleted: false
-           };
+          const rawStream = getCol(cols, ['stream', 'group', 'branch', 'faculty'], 15);
+          const rawRoll = getCol(cols, ['rollno', 'roll_no', 'roll', 'examrollno', 'rollnumber'], 12) || String(lineIdx + 1);
+          const rawSr = getCol(cols, ['srno', 'sr_no', 'sr', 'serialno', 'srnumber'], 0) || `SR-${1000 + lineIdx + 1}`;
+          const rawAdm = getCol(cols, ['admissionno', 'admission_no', 'admno', 'adm_no', 'regno', 'registrationno'], 1) || `ADM-${5000 + lineIdx + 1}`;
 
-           // Map dynamic exam marks if available
-           for (let i = 0; i < cols.length; i++) {
-              const colNameHeader = headerLine[i];
-              if (!colNameHeader) continue;
-              const match = colNameHeader.replace(/"/g, '').match(/(.+) (.*?) Obtained/i);
-              if (match) {
-                const subject = match[1].trim();
-                const examType = match[2].trim() as any;
-                const marksObtained = Number(cols[i]);
-                const maxMarks = Number(cols[i + 1] || 100);
-                if (!isNaN(marksObtained) && cols[i] !== '') {
-                  marksToImport.push({
-                     studentId,
-                     teacherId: currentUser?.id || 'admin',
-                     examType,
-                     subject,
-                     marksObtained,
-                     maxMarks: isNaN(maxMarks) ? 100 : maxMarks
-                  });
+          const tempStudentId = `s_${Date.now()}_${lineIdx}_${Math.random().toString().slice(2, 6)}`;
+
+          const parsedStudent: Student = {
+            role: 'STUDENT',
+            id: tempStudentId,
+            schoolId: currentUser?.schoolId || '',
+            srNo: rawSr,
+            admissionNo: rawAdm,
+            name: rawName,
+            gender: (getCol(cols, ['gender', 'sex'], 3) as any) || 'Male',
+            fatherName: getCol(cols, ['father', 'fathername', 'fathersname', 'father_name'], 4),
+            motherName: getCol(cols, ['mother', 'mothername', 'mothersname', 'mother_name'], 5),
+            dob: getCol(cols, ['dob', 'dateofbirth', 'birthdate'], 6),
+            mobile: getCol(cols, ['mobile', 'phone', 'contact', 'mobileno', 'phoneno'], 7),
+            aadhar: getCol(cols, ['aadhar', 'aadharno', 'aadhaar', 'uid'], 8),
+            email: getCol(cols, ['email', 'emailid'], 9),
+            address: getCol(cols, ['address', 'fulladdress', 'addr'], 10),
+            grade: normalizedGrade,
+            rollNo: rawRoll,
+            academicSession: studentSession,
+            previousClass: getCol(cols, ['previousclass', 'prevclass', 'prev_class'], 14),
+            stream: rawStream as any,
+            password: getCol(cols, ['password', 'pwd'], 16) || 'password123',
+            feeBalance: Number(getCol(cols, ['feebalance', 'fee_balance', 'dues', 'balance'], 17) || 0),
+            subjects: getDefaultSubjectsForGrade(normalizedGrade, rawStream),
+            isDeleted: false
+          };
+
+          // Extract all exam marks for this student row
+          const rowMarks: Omit<ExamMark, 'id' | 'date' | 'schoolId'>[] = [];
+          for (let i = 0; i < cols.length; i++) {
+            const colNameHeader = headerLine[i];
+            if (!colNameHeader) continue;
+            const parsedExam = parseExamHeader(colNameHeader);
+            if (parsedExam && !parsedExam.isMax) {
+              const marksObtained = Number(cols[i]);
+              if (!isNaN(marksObtained) && cols[i] !== '') {
+                // Find if there is an explicit Max column
+                let maxMarks = 100;
+                // Check if next column is the matching Max
+                if (i + 1 < cols.length && headerLine[i + 1]) {
+                  const nextExam = parseExamHeader(headerLine[i + 1]);
+                  if (nextExam && nextExam.isMax && isSameSubject(nextExam.subject, parsedExam.subject)) {
+                    const parsedMax = Number(cols[i + 1]);
+                    if (!isNaN(parsedMax) && parsedMax > 0) {
+                      maxMarks = parsedMax;
+                    }
+                  }
                 }
+                
+                // Fallback default based on exam type
+                if (maxMarks === 100) {
+                  if (parsedExam.examType === 'Half-Yearly Test' || parsedExam.examType === 'Yearly Test') {
+                    maxMarks = 10;
+                  } else if (parsedExam.examType === 'Half-Yearly Exam' || parsedExam.examType === 'Yearly Exam') {
+                    maxMarks = 90;
+                  }
+                }
+
+                rowMarks.push({
+                  studentId: tempStudentId,
+                  teacherId: currentUser?.id || 'admin',
+                  examType: parsedExam.examType,
+                  subject: parsedExam.subject,
+                  marksObtained,
+                  maxMarks
+                });
               }
-           }
+            }
+          }
 
-           return student;
-        }).filter(Boolean) as Student[];
+          // Check if this student matches any existing record
+          const duplicateMatch = findDuplicateStudentMatch(parsedStudent);
+          if (duplicateMatch) {
+            const existingId = duplicateMatch.existing.id;
+            duplicateItems.push({
+              incomingStudent: {
+                ...parsedStudent,
+                id: existingId, // Preserve original student ID for seamless updates
+                subjects: parsedStudent.subjects && parsedStudent.subjects.length > 0 ? parsedStudent.subjects : (duplicateMatch.existing.subjects || getDefaultSubjectsForGrade(duplicateMatch.existing.grade))
+              },
+              existingStudent: duplicateMatch.existing,
+              marks: rowMarks.map(m => ({ ...m, studentId: existingId })),
+              matchReason: duplicateMatch.reason
+            });
+          } else {
+            newItems.push({
+              student: parsedStudent,
+              marks: rowMarks
+            });
+          }
+        });
 
-        if (parsedStudents.length > 0) {
-          importStudents(parsedStudents);
+        const totalParsed = newItems.length + duplicateItems.length;
+        if (totalParsed === 0) {
+          alert('CSV फ़ाइल में कोई मान्य छात्र रिकॉर्ड नहीं मिला। (No valid student rows found in CSV file.)');
+          return;
+        }
+
+        // If duplicate records exist, open the interactive confirmation modal
+        if (duplicateItems.length > 0) {
+          setCsvImportPrompt({
+            newItems,
+            duplicateItems,
+            totalRows: totalParsed
+          });
+        } else {
+          // No duplicates found, direct import of all new items
+          const studentsToImport = newItems.map(item => item.student);
+          const marksToImport = newItems.flatMap(item => item.marks);
+
+          importStudents(studentsToImport);
           if (marksToImport.length > 0) {
             importMarks(marksToImport);
           }
-          alert(`Successfully imported ${parsedStudents.length} student records and ${marksToImport.length} marks. All students are now active across Admit Cards, Exam Results, and All School Modules.`);
-        } else {
-          alert('No valid student rows found in the CSV file.');
+          alert(`सफलतापूर्वक ${studentsToImport.length} नए छात्र और ${marksToImport.length} परीक्षा अंक (Marks) अपलोड किए गए। सभी परिणाम (Results) और रिपोर्ट कार्ड्स पर अपडेट हो चुके हैं।`);
         }
       }
     };
     reader.readAsText(file);
     e.target.value = '';
+  };
+
+  // Handler 1: Only import new records, skip duplicates
+  const handleConfirmOnlyNew = () => {
+    if (!csvImportPrompt) return;
+    const studentsToImport = csvImportPrompt.newItems.map(item => item.student);
+    const marksToImport = csvImportPrompt.newItems.flatMap(item => item.marks);
+
+    if (studentsToImport.length > 0) {
+      importStudents(studentsToImport);
+    }
+    if (marksToImport.length > 0) {
+      importMarks(marksToImport);
+    }
+
+    const newCount = studentsToImport.length;
+    const dupCount = csvImportPrompt.duplicateItems.length;
+    const marksCount = marksToImport.length;
+    setCsvImportPrompt(null);
+
+    alert(`सफलतापूर्वक केवल ${newCount} नए छात्र रिकॉर्ड और उनके ${marksCount} परीक्षा अंक अपलोड किए गए। ${dupCount} डुप्लीकेट रिकॉर्ड छोड़ दिए गए।`);
+  };
+
+  // Handler 2: Allow duplicates, update existing records + add new records + sync all marks
+  const handleConfirmAllowDuplicates = () => {
+    if (!csvImportPrompt) return;
+    const newStudents = csvImportPrompt.newItems.map(item => item.student);
+    const updatedDuplicates = csvImportPrompt.duplicateItems.map(item => item.incomingStudent);
+    const allStudents = [...newStudents, ...updatedDuplicates];
+
+    const allMarks = [
+      ...csvImportPrompt.newItems.flatMap(item => item.marks),
+      ...csvImportPrompt.duplicateItems.flatMap(item => item.marks)
+    ];
+
+    if (allStudents.length > 0) {
+      importStudents(allStudents);
+    }
+    if (allMarks.length > 0) {
+      importMarks(allMarks);
+    }
+
+    const totalCount = allStudents.length;
+    const marksCount = allMarks.length;
+    setCsvImportPrompt(null);
+
+    alert(`सफलतापूर्वक सभी ${totalCount} छात्र रिकॉर्ड (${newStudents.length} नए + ${updatedDuplicates.length} डुप्लीकेट अपडेटेड) और ${marksCount} परीक्षा अंक रिजल्ट और पोर्टल पर अपडेट कर दिए गए।`);
+  };
+
+  const handleCancelImport = () => {
+    setCsvImportPrompt(null);
   };
 
   const currentSchool = schools.find(s => s.id === (currentUser?.schoolId || ''));
@@ -1117,6 +1323,157 @@ export function AdminPanel() {
           student={selectedReportCardStudent} 
           onClose={() => setSelectedReportCardStudent(null)} 
         />
+      )}
+
+      {/* CSV IMPORT DUPLICATE RECORDS CONFIRMATION MODAL */}
+      {csvImportPrompt && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 no-print overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-3xl w-full shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150 my-8">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-amber-500 via-amber-600 to-orange-600 px-6 py-4 text-white flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center">
+                  <AlertTriangle className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black tracking-wide">
+                    डुप्लीकेट रिकॉर्ड पाए गए (Duplicate Records Detected)
+                  </h3>
+                  <p className="text-xs text-amber-100 font-medium">
+                    CSV फ़ाइल में कुल {csvImportPrompt.totalRows} में से {csvImportPrompt.duplicateItems.length} डुप्लीकेट रिकॉर्ड मिले हैं।
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={handleCancelImport}
+                className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+                title="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Summary KPI Badges */}
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
+                  <span className="text-[10px] uppercase font-bold text-slate-500">कुल फ़ाइल रिकॉर्ड</span>
+                  <p className="text-xl font-black text-slate-800">{csvImportPrompt.totalRows}</p>
+                </div>
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center">
+                  <span className="text-[10px] uppercase font-bold text-emerald-700">नए छात्र (New)</span>
+                  <p className="text-xl font-black text-emerald-800">{csvImportPrompt.newItems.length}</p>
+                </div>
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-center">
+                  <span className="text-[10px] uppercase font-bold text-amber-700">डुप्लीकेट (Duplicates)</span>
+                  <p className="text-xl font-black text-amber-800">{csvImportPrompt.duplicateItems.length}</p>
+                </div>
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center">
+                  <span className="text-[10px] uppercase font-bold text-blue-700">कुल परीक्षा मार्क्स</span>
+                  <p className="text-xl font-black text-blue-800">
+                    {csvImportPrompt.newItems.flatMap(x => x.marks).length + csvImportPrompt.duplicateItems.flatMap(x => x.marks).length}
+                  </p>
+                </div>
+              </div>
+
+              {/* Duplicate Records Table Preview */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <Label className="text-xs font-bold text-slate-700">
+                    पहचाने गए डुप्लीकेट छात्र विवरण ({csvImportPrompt.duplicateItems.length} Records):
+                  </Label>
+                  <span className="text-[11px] text-slate-500">
+                    (Matching SR No, Adm No, Name, or Roll No)
+                  </span>
+                </div>
+                
+                <div className="border border-slate-200 rounded-xl max-h-56 overflow-y-auto overflow-x-auto bg-slate-50/50">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-100 text-slate-600 font-bold border-b border-slate-200 sticky top-0">
+                      <tr>
+                        <th className="px-3 py-2">छात्र नाम (Student)</th>
+                        <th className="px-3 py-2">कक्षा (Grade)</th>
+                        <th className="px-3 py-2">पिता का नाम (Father)</th>
+                        <th className="px-3 py-2">SR / Adm No</th>
+                        <th className="px-3 py-2">मिलान का कारण (Match Reason)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {csvImportPrompt.duplicateItems.map((item, idx) => (
+                        <tr key={idx} className="hover:bg-amber-50/40 transition-colors">
+                          <td className="px-3 py-2 font-bold text-slate-800">
+                            {item.incomingStudent.name}
+                          </td>
+                          <td className="px-3 py-2 text-slate-600 font-medium">
+                            {item.incomingStudent.grade}
+                          </td>
+                          <td className="px-3 py-2 text-slate-600">
+                            {item.incomingStudent.fatherName || '-'}
+                          </td>
+                          <td className="px-3 py-2 font-mono text-[11px] text-slate-500">
+                            {item.incomingStudent.srNo || item.incomingStudent.admissionNo || '-'}
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                              <AlertCircle className="w-3 h-3 text-amber-700" />
+                              {item.matchReason}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* User Confirmation Question & Instructions */}
+              <div className="bg-amber-50/80 border border-amber-200 rounded-xl p-4 text-xs text-amber-900 space-y-1.5">
+                <p className="font-bold flex items-center gap-1.5 text-amber-950">
+                  <HelpCircle className="w-4 h-4 text-amber-700" />
+                  क्या आप डुप्लीकेट रिकॉर्ड को भी अपलोड / अपडेट करना चाहते हैं?
+                </p>
+                <ul className="list-disc list-inside space-y-1 text-slate-700 ml-1">
+                  <li>
+                    <strong className="text-emerald-700">केवल नए रिकॉर्ड (New Only):</strong> केवल {csvImportPrompt.newItems.length} नए छात्र और उनके अंक अपलोड होंगे। डुप्लीकेट रिकॉर्ड छोड़ दिए जाएंगे।
+                  </li>
+                  <li>
+                    <strong className="text-blue-700">डुप्लीकेट भी अनुमति दें (Allow Duplicates):</strong> नए छात्र जोड़े जाएंगे और डुप्लीकेट छात्रों का डेटा व परीक्षा अंक (Marks) अपडेट हो जाएंगे।
+                  </li>
+                </ul>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-col sm:flex-row items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleCancelImport}
+                  className="w-full sm:w-auto text-xs px-4 py-2"
+                >
+                  रद्द करें (Cancel)
+                </Button>
+
+                <Button
+                  type="button"
+                  onClick={handleConfirmOnlyNew}
+                  className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 py-2 flex items-center justify-center gap-1.5 shadow-xs"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  केवल नए रिकॉर्ड अपलोड करें ({csvImportPrompt.newItems.length} New Only)
+                </Button>
+
+                <Button
+                  type="button"
+                  onClick={handleConfirmAllowDuplicates}
+                  className="w-full sm:w-auto bg-indigo-650 hover:bg-indigo-750 text-white font-bold text-xs px-4 py-2 flex items-center justify-center gap-1.5 shadow-xs"
+                >
+                  <CheckCheck className="w-4 h-4" />
+                  हाँ, डुप्लीकेट भी अनुमति दें और अपडेट करें ({csvImportPrompt.totalRows} All)
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

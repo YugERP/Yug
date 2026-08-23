@@ -3,7 +3,7 @@ import { useStore } from '../../store';
 import { Card, Button, Label, Input } from '../UI';
 import { type Student, type ExamMark } from '../../types';
 import { Printer, Search, Award, FileText, ChevronRight, Eye } from 'lucide-react';
-import { isSameGrade, normalizeGrade, ALL_STANDARD_CLASSES } from '../../utils/gradeHelper';
+import { isSameGrade, normalizeGrade, ALL_STANDARD_CLASSES, isSameSubject } from '../../utils/gradeHelper';
 
 const getSchoolNameStyle = (name: string, template: 'classic_portrait' | 'landscape_new') => {
   const len = name.length;
@@ -130,10 +130,10 @@ function ReportCardPrintSheet({ student, selectedTemplate = 'classic_portrait' }
 
   const subjectRows = studentSubjects.map(subject => {
     const isGradingOnly = isSeniorGrade && ['p.t.', 'p.t', 'physical education', 'pt', 'games', 'physical & health education'].includes(subject.toLowerCase().trim());
-    const hyTest = studentMarks.find(m => m.subject.toLowerCase() === subject.toLowerCase() && m.examType === 'Half-Yearly Test');
-    const hyExam = studentMarks.find(m => m.subject.toLowerCase() === subject.toLowerCase() && m.examType === 'Half-Yearly Exam');
-    const yTest = studentMarks.find(m => m.subject.toLowerCase() === subject.toLowerCase() && m.examType === 'Yearly Test');
-    const yExam = studentMarks.find(m => m.subject.toLowerCase() === subject.toLowerCase() && m.examType === 'Yearly Exam');
+    const hyTest = studentMarks.find(m => isSameSubject(m.subject, subject) && m.examType === 'Half-Yearly Test');
+    const hyExam = studentMarks.find(m => isSameSubject(m.subject, subject) && m.examType === 'Half-Yearly Exam');
+    const yTest = studentMarks.find(m => isSameSubject(m.subject, subject) && m.examType === 'Yearly Test');
+    const yExam = studentMarks.find(m => isSameSubject(m.subject, subject) && m.examType === 'Yearly Exam');
 
     const hasHy = hyTest || hyExam;
     const hasY = yTest || yExam;

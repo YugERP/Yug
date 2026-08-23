@@ -138,3 +138,112 @@ export function getDefaultSubjectsForGrade(gradeStr?: string | null, stream?: st
 
   return ['Hindi', 'English', 'Mathematics', 'Science', 'Social Science', 'Drawing', 'P.T.'];
 }
+
+/**
+ * Normalizes subject names across various formats, abbreviations, and languages
+ */
+export function normalizeSubject(subject?: string | null): string {
+  if (!subject) return 'General';
+  const clean = subject.toString().trim();
+  if (!clean) return 'General';
+
+  const subLower = clean.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  if (/^math/.test(subLower)) return 'Mathematics';
+  if (/^hindi/.test(subLower)) return 'Hindi';
+  if (/^eng/.test(subLower)) return 'English';
+  if (/^sci/.test(subLower) && !subLower.includes('social')) return 'Science';
+  if (/^soc|^sst|^social/.test(subLower)) return 'Social Science';
+  if (/^sans/.test(subLower)) return 'Sanskrit';
+  if (/^draw|^art|^craft/.test(subLower)) return 'Drawing';
+  if (/^gk|^general|^moral/.test(subLower)) return 'G.K Moral';
+  if (/^reas/.test(subLower)) return 'Reasoning';
+  if (/^pt|^physic/.test(subLower) && !subLower.includes('physics')) return 'P.T.';
+  if (/^comp|^it$/.test(subLower)) return 'Computer Science';
+  if (/^urdu/.test(subLower)) return 'Urdu';
+  if (/^home/.test(subLower)) return 'Home Science';
+  if (/^phys/.test(subLower)) return 'Physics';
+  if (/^chem/.test(subLower)) return 'Chemistry';
+  if (/^bio/.test(subLower)) return 'Biology';
+  if (/^acc/.test(subLower)) return 'Accountancy';
+  if (/^bus|^bst/.test(subLower)) return 'Business Studies';
+  if (/^eco/.test(subLower)) return 'Economics';
+  if (/^hist/.test(subLower)) return 'History';
+  if (/^geo/.test(subLower)) return 'Geography';
+  if (/^pol/.test(subLower)) return 'Political Science';
+
+  // Return formatted capitalized subject if unrecognized
+  return clean.charAt(0).toUpperCase() + clean.slice(1);
+}
+
+/**
+ * Checks if two subject names represent the same academic subject
+ */
+export function isSameSubject(s1?: string | null, s2?: string | null): boolean {
+  if (!s1 || !s2) return false;
+  if (s1.trim().toLowerCase() === s2.trim().toLowerCase()) return true;
+  return normalizeSubject(s1).toLowerCase() === normalizeSubject(s2).toLowerCase();
+}
+
+/**
+ * Robust parser for exam column headers in imported CSV files.
+ * Handles formats like:
+ * - "Hindi Half-Yearly Test Obtained", "Hindi Half-Yearly Test Max"
+ * - "Hindi Half-Yearly Exam Obtained", "Hindi Yearly Exam Max"
+ * - "Hindi (Half-Yearly Test)", "Mathematics Yearly Exam"
+ * - "Hindi_Marks", "Maths_Marks", "Science"
+ */
+export function parseExamHeader(headerName: string): { subject: string; examType: 'Half-Yearly Test' | 'Half-Yearly Exam' | 'Yearly Test' | 'Yearly Exam'; isMax: boolean } | null {
+  const clean = headerName.replace(/["']/g, '').trim();
+  if (!clean) return null;
+
+  const isMax = /\b(max|maximum|total|maxmarks|max_marks)\b/i.test(clean);
+
+  // Check known exam types in order of specificity
+  let examType: 'Half-Yearly Test' | 'Half-Yearly Exam' | 'Yearly Test' | 'Yearly Exam' = 'Yearly Exam';
+  let textWithoutExam = clean;
+
+  if (/half[-_\s]?yearly[-_\s]?test|half[-_\s]?year[-_\s]?test|hy[-_\s]?test|half[-_\s]?test/i.test(clean)) {
+    examType = 'Half-Yearly Test';
+    textWithoutExam = clean.replace(/half[-_\s]?yearly[-_\s]?test|half[-_\s]?year[-_\s]?test|hy[-_\s]?test|half[-_\s]?test/gi, '');
+  } else if (/half[-_\s]?yearly[-_\s]?exam|half[-_\s]?year[-_\s]?exam|hy[-_\s]?exam|half[-_\s]?yearly|half[-_\s]?year|hy/i.test(clean)) {
+    examType = 'Half-Yearly Exam';
+    textWithoutExam = clean.replace(/half[-_\s]?yearly[-_\s]?exam|half[-_\s]?year[-_\s]?exam|hy[-_\s]?exam|half[-_\s]?yearly|half[-_\s]?year|hy/gi, '');
+  } else if (/yearly[-_\s]?test|annual[-_\s]?test|final[-_\s]?test|y[-_\s]?test/i.test(clean)) {
+    examType = 'Yearly Test';
+    textWithoutExam = clean.replace(/yearly[-_\s]?test|annual[-_\s]?test|final[-_\s]?test|y[-_\s]?test/gi, '');
+  } else if (/yearly[-_\s]?exam|annual[-_\s]?exam|final[-_\s]?exam|annual|yearly|final/i.test(clean)) {
+    examType = 'Yearly Exam';
+    textWithoutExam = clean.replace(/yearly[-_\s]?exam|annual[-_\s]?exam|final[-_\s]?exam|annual|yearly|final/gi, '');
+  } else if (/\btest\b/i.test(clean)) {
+    examType = 'Half-Yearly Test';
+    textWithoutExam = clean.replace(/\btest\b/gi, '');
+  } else if (/\bexam\b/i.test(clean)) {
+    examType = 'Half-Yearly Exam';
+    textWithoutExam = clean.replace(/\bexam\b/gi, '');
+  }
+
+  // Strip trailing/leading keywords like "Obtained", "Max", "Marks", "Score", parentheses, underscores
+  let subjectText = textWithoutExam
+    .replace(/\b(obtained|obt|max|maximum|total|maxmarks|max_marks|marks|mark|score|points)\b/gi, '')
+    .replace(/[()[\]_]/g, ' ')
+    .trim();
+
+  if (!subjectText) return null;
+
+  // Disallow student general info field names from being misinterpreted as subjects
+  const bannedKeywords = [
+    'name', 'studentname', 'fullname', 'sr', 'srno', 'admission', 'admissionno', 'admno',
+    'roll', 'rollno', 'class', 'grade', 'std', 'father', 'mother', 'gender', 'sex', 'dob',
+    'mobile', 'phone', 'contact', 'aadhar', 'email', 'address', 'password', 'session',
+    'stream', 'balance', 'dues', 'feebalance', 'photo', 'previousclass', 'prevclass'
+  ];
+  
+  const cleanSubLower = subjectText.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (bannedKeywords.includes(cleanSubLower)) {
+    return null;
+  }
+
+  const subject = normalizeSubject(subjectText);
+  return { subject, examType, isMax };
+}

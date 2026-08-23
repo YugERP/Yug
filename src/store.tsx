@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { User, Student, Teacher, ParentAccount, Homework, ExamMark, FeeRecord, Issue, Role, School, AttendanceRecord, NotificationLog, SessionRequest, AttendanceRequest } from './types';
 import { doc, setDoc, deleteDoc, updateDoc, onSnapshot, getDoc, collection, query, where } from 'firebase/firestore';
 import { db } from './firebase';
+import { isSameSubject, normalizeSubject } from './utils/gradeHelper';
 
 // Helper to safely read from localStorage
 const getLocalStorageItem = <T,>(key: string, defaultValue: T): T => {
@@ -616,9 +617,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       // Optimistically update local React state immediately so UI refreshes without delay
       setStudents(prev => {
-        const existingIds = new Set(prev.map(p => p.id));
-        const filteredNew = studentsWithMeta.filter(ns => !existingIds.has(ns.id));
-        return [...prev, ...filteredNew];
+        const studentMap = new Map<string, Student>();
+        prev.forEach(s => studentMap.set(s.id, s));
+        studentsWithMeta.forEach(ns => {
+          const existing = studentMap.get(ns.id);
+          studentMap.set(ns.id, existing ? { ...existing, ...ns } : ns);
+        });
+        return Array.from(studentMap.values());
       });
 
       for (const s of studentsWithMeta) {
@@ -777,13 +782,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const addMark = async (mark: Omit<ExamMark, 'id' | 'date' | 'schoolId'>) => {
     try {
-      const id = `m${Date.now()}`;
-      await setDoc(doc(db, 'marks', id), {
+      const normSubject = normalizeSubject(mark.subject);
+      const existing = marks.find(m => 
+        m.studentId === mark.studentId && 
+        m.examType === mark.examType && 
+        isSameSubject(m.subject, mark.subject)
+      );
+      const id = existing ? existing.id : `m_${Date.now()}_${Math.random().toString().slice(2, 6)}`;
+      const savedMark: ExamMark = {
         ...mark,
+        subject: normSubject,
         id,
         schoolId: effectiveSchoolId,
         date: new Date().toISOString()
+      };
+
+      setMarks(prev => {
+        const filtered = prev.filter(m => m.id !== id && !(m.studentId === mark.studentId && m.examType === mark.examType && isSameSubject(m.subject, mark.subject)));
+        return [...filtered, savedMark];
       });
+
+      await setDoc(doc(db, 'marks', id), savedMark);
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, 'marks');
     }
@@ -792,19 +811,34 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const importMarks = async (newMarks: Omit<ExamMark, 'id' | 'date' | 'schoolId'>[]) => {
     try {
       const targetSchoolId = effectiveSchoolId || currentUser?.schoolId || '';
-      const marksToSave: ExamMark[] = newMarks.map((m, idx) => ({
-        ...m,
-        id: `m_${Date.now()}_${idx}_${Math.random().toString().slice(2, 6)}`,
-        schoolId: targetSchoolId,
-        date: new Date().toISOString()
-      }));
+      
+      const currentMarksMap = new Map<string, ExamMark>();
+      marks.forEach(m => {
+        const key = `${m.studentId}:::${m.examType}:::${normalizeSubject(m.subject).toLowerCase()}`;
+        currentMarksMap.set(key, m);
+      });
 
-      setMarks(prev => [...prev, ...marksToSave]);
+      const marksToPersist: ExamMark[] = [];
 
-      const batchList = [];
-      for (const mark of marksToSave) {
-        batchList.push(setDoc(doc(db, 'marks', mark.id), mark));
-      }
+      newMarks.forEach((m, idx) => {
+        const normSub = normalizeSubject(m.subject);
+        const key = `${m.studentId}:::${m.examType}:::${normSub.toLowerCase()}`;
+        const existing = currentMarksMap.get(key);
+        const id = existing ? existing.id : `m_${Date.now()}_${idx}_${Math.random().toString().slice(2, 6)}`;
+        const markObj: ExamMark = {
+          ...m,
+          subject: normSub,
+          id,
+          schoolId: targetSchoolId,
+          date: new Date().toISOString()
+        };
+        currentMarksMap.set(key, markObj);
+        marksToPersist.push(markObj);
+      });
+
+      setMarks(Array.from(currentMarksMap.values()));
+
+      const batchList = marksToPersist.map(mark => setDoc(doc(db, 'marks', mark.id), mark));
       await Promise.all(batchList);
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, 'marks batch');
