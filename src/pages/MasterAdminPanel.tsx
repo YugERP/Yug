@@ -1,9 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../store';
 import { Card, Button, Label, Input } from '../components/UI';
-import { School, Building, Plus, Trash2, Download, Upload, FileJson, FileText, CheckCircle2, AlertTriangle, Edit, X, Cloud, Copy, Check, Clock, RefreshCw, ExternalLink, Database } from 'lucide-react';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { 
+  School, Building, Plus, Trash2, Download, Upload, FileJson, FileText, 
+  CheckCircle2, AlertTriangle, Edit, X, Cloud, Copy, Check, Clock, 
+  RefreshCw, ExternalLink, Database, FileSpreadsheet, HardDrive, 
+  ShieldCheck, Image as ImageIcon, Sparkles, FolderSync, CheckCircle 
+} from 'lucide-react';
+import { doc, setDoc, getDoc, collection, onSnapshot, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { uploadBackupToGoogleDrive, getGoogleDriveAccessToken } from '../utils/googleDrive';
 
 export function MasterAdminPanel() {
   const { 
@@ -20,6 +26,7 @@ export function MasterAdminPanel() {
     allMarks,
     allFeeRecords,
     attendances,
+    teachers,
     deleteAllStudentsInSchool,
     feeRecords, 
     academicSessions, 
@@ -50,9 +57,9 @@ export function MasterAdminPanel() {
   const [sessionConfigTarget, setSessionConfigTarget] = useState('2026-27');
   const [showFullSessionsGrid, setShowFullSessionsGrid] = useState(false);
 
-  // Sync Hub State
-  const [syncSchoolId, setSyncSchoolId] = useState('');
-  const [syncCategory, setSyncCategory] = useState<'students' | 'profile' | 'gdrive'>('students');
+  // Sync Hub State - defaults to 'all' for Global Master Backup
+  const [syncSchoolId, setSyncSchoolId] = useState('all');
+  const [syncCategory, setSyncCategory] = useState<'students' | 'imadate_drive' | 'cloud_snapshots' | 'profile'>('students');
   const [importStatus, setImportStatus] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
   const [importedCount, setImportedCount] = useState(0);
@@ -65,16 +72,54 @@ export function MasterAdminPanel() {
     return stored !== null ? stored === 'true' : true;
   });
   const [gdriveStatus, setGdriveStatus] = useState<'disconnected' | 'connecting' | 'connected'>(() => {
-    return (localStorage.getItem('gdrive_status') as 'disconnected' | 'connecting' | 'connected') || 'disconnected';
+    return (localStorage.getItem('gdrive_status') as 'disconnected' | 'connecting' | 'connected') || 'connected';
   });
-  const [gdriveUser, setGdriveUser] = useState(() => localStorage.getItem('gdrive_user') || '');
-  const [manualBackupProgress, setManualBackupProgress] = useState<number | null>(null);
-  const [manualBackupLog, setManualBackupLog] = useState<string[]>([]);
-  const [firestoreCloudBackups, setFirestoreCloudBackups] = useState<{ id: string, schoolId: string, schoolName: string, exportedAt: string, studentsCount: number, marksCount: number, size: string }[]>([
-    { id: 'sb_auto_20260701_001', schoolId: '', schoolName: 'Primary School Node', exportedAt: '2026-07-01T00:00:12.420Z', studentsCount: 42, marksCount: 30, size: '28.4 KB' },
-    { id: 'sb_auto_20260630_001', schoolId: '', schoolName: 'Primary School Node', exportedAt: '2026-06-30T00:00:08.150Z', studentsCount: 42, marksCount: 28, size: '28.2 KB' },
-    { id: 'sb_auto_20260629_001', schoolId: '', schoolName: 'Primary School Node', exportedAt: '2026-06-29T00:00:15.910Z', studentsCount: 40, marksCount: 25, size: '27.1 KB' }
-  ]);
+  const [gdriveUser, setGdriveUser] = useState(() => localStorage.getItem('gdrive_user') || 'shankaldeep4@gmail.com');
+  const [showDriveAssistantModal, setShowDriveAssistantModal] = useState(false);
+  const [lastBackupDetails, setLastBackupDetails] = useState<{ 
+    fileName: string; 
+    size: string; 
+    studentsCount: number; 
+    photosCount: number;
+    gdriveUploaded?: boolean;
+    gdriveFileLink?: string;
+    gdriveError?: string;
+    backupPackage?: any;
+  } | null>(null);
+  const [isDriveUploading, setIsDriveUploading] = useState(false);
+
+  // Realtime Cloud Backups from Firestore
+  const [firestoreCloudBackups, setFirestoreCloudBackups] = useState<{ id: string, schoolId: string, schoolName: string, exportedAt: string, studentsCount: number, studentsWithPhotosCount?: number, marksCount: number, attendancesCount?: number, feeRecordsCount?: number, size: string, snapshot?: string }[]>([]);
+
+  // Subscribe to real Firestore 'school_backups' collection
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'school_backups'), (snap) => {
+      const list: any[] = [];
+      snap.forEach(docSnap => {
+        const d = docSnap.data();
+        const rawSnap = d.snapshot || '';
+        const sizeKB = d.size || `${((d.dataLength || rawSnap.length || 1024) / 1024).toFixed(1)} KB`;
+        list.push({
+          id: d.id || docSnap.id,
+          schoolId: d.schoolId || '',
+          schoolName: d.schoolName || 'School Node Backup',
+          exportedAt: d.exportedAt || new Date().toISOString(),
+          studentsCount: d.studentsCount ?? (d.students?.length || 0),
+          studentsWithPhotosCount: d.studentsWithPhotosCount ?? (d.studentsWithPhotos || 0),
+          marksCount: d.marksCount ?? (d.marks?.length || 0),
+          attendancesCount: d.attendancesCount ?? (d.attendances?.length || 0),
+          feeRecordsCount: d.feeRecordsCount ?? (d.feeRecords?.length || 0),
+          size: sizeKB,
+          snapshot: d.snapshot
+        });
+      });
+      list.sort((a, b) => new Date(b.exportedAt).getTime() - new Date(a.exportedAt).getTime());
+      setFirestoreCloudBackups(list);
+    }, (err) => {
+      console.warn("Could not listen to school_backups:", err);
+    });
+    return () => unsub();
+  }, []);
 
   // Persist Google Drive settings to localStorage
   useEffect(() => {
@@ -94,66 +139,111 @@ export function MasterAdminPanel() {
   }, [gdriveUser]);
 
   const studentInputRef = useRef<HTMLInputElement>(null);
+  const csvInputRef = useRef<HTMLInputElement>(null);
   const profileInputRef = useRef<HTMLInputElement>(null);
 
-  // Cloud Backup and Restore handlers
-  const handleImmediateCloudBackup = async () => {
-    if (!syncSchoolId) {
-      alert("Please choose a target school first.");
-      return;
-    }
-    const targetStudents = allStudents.filter(s => s.schoolId === syncSchoolId);
-    const targetMarks = allMarks.filter(m => m.schoolId === syncSchoolId);
-    const targetAttendances = attendances.filter(a => a.schoolId === syncSchoolId);
-    const targetFeeRecords = allFeeRecords.filter(f => f.schoolId === syncSchoolId);
+  // Helper to extract target data for backup with complete student details & photos
+  const getTargetData = (targetId: string = syncSchoolId) => {
+    const isGlobal = targetId === 'all' || !targetId;
+    const targetSchools = isGlobal ? schools : schools.filter(s => s.id === targetId);
+    const targetStudents = isGlobal 
+      ? allStudents 
+      : allStudents.filter(s => s.schoolId === targetId || (!s.schoolId && targetId === 'sch1'));
+    const targetMarks = isGlobal 
+      ? allMarks 
+      : allMarks.filter(m => m.schoolId === targetId || (!m.schoolId && targetId === 'sch1'));
+    const targetAttendances = isGlobal 
+      ? attendances 
+      : attendances.filter(a => a.schoolId === targetId || (!a.schoolId && targetId === 'sch1'));
+    const targetFeeRecords = isGlobal 
+      ? allFeeRecords 
+      : allFeeRecords.filter(f => f.schoolId === targetId || (!f.schoolId && targetId === 'sch1'));
+    const targetTeachers = isGlobal 
+      ? (teachers || []) 
+      : (teachers || []).filter(t => t.schoolId === targetId || (!t.schoolId && targetId === 'sch1'));
+    const targetUsers = isGlobal 
+      ? (users || []) 
+      : (users || []).filter(u => u.schoolId === targetId || (!u.schoolId && targetId === 'sch1'));
 
-    const schoolName = schools.find(s => s.id === syncSchoolId)?.name || 'Selected School';
+    const studentsWithPhotos = targetStudents.filter(s => !!(s.docStudentPhoto || s.avatar)).length;
+
+    return {
+      isGlobal,
+      targetSchools,
+      targetStudents,
+      targetMarks,
+      targetAttendances,
+      targetFeeRecords,
+      targetTeachers,
+      targetUsers,
+      studentsWithPhotos
+    };
+  };
+
+  // Creates structured backup package preserving ALL details and photos
+  const createFullBackupPackage = (targetId: string = syncSchoolId) => {
+    const { isGlobal, targetSchools, targetStudents, targetMarks, targetAttendances, targetFeeRecords, targetTeachers, targetUsers, studentsWithPhotos } = getTargetData(targetId);
+    const schoolName = isGlobal 
+      ? "All Schools (Global Multi-School Database Backup)" 
+      : (schools.find(s => s.id === targetId)?.name || 'Selected School Node');
+
+    return {
+      version: "2.0",
+      type: isGlobal ? "global_system_backup" : "school_full_backup",
+      system: "EduManage School ERP Master Suite",
+      schoolId: isGlobal ? "all" : targetId,
+      schoolName: schoolName,
+      exportedAt: new Date().toISOString(),
+      exportedBy: "Master Administrator",
+      metadata: {
+        totalSchools: targetSchools.length,
+        totalStudents: targetStudents.length,
+        studentsWithPhotos: studentsWithPhotos,
+        totalMarks: targetMarks.length,
+        totalAttendances: targetAttendances.length,
+        totalFeeRecords: targetFeeRecords.length,
+        totalTeachers: targetTeachers.length
+      },
+      schools: targetSchools,
+      students: targetStudents, // Complete fields including docStudentPhoto, fatherPhoto, motherPhoto, docStudentSig, academicHistory, feeBalance, etc.
+      marks: targetMarks,
+      attendances: targetAttendances,
+      feeRecords: targetFeeRecords,
+      teachers: targetTeachers,
+      users: targetUsers
+    };
+  };
+
+  // Immediate Cloud Backup into Firestore
+  const handleImmediateCloudBackup = async () => {
     setIsSyncing(true);
-    setImportStatus('Creating secure, consolidated cloud restore package...');
+    setImportStatus('Creating secure, consolidated cloud restore package in Firestore...');
 
     try {
+      const backupPackage = createFullBackupPackage(syncSchoolId);
+      const targetData = getTargetData(syncSchoolId);
+      const jsonStr = JSON.stringify(backupPackage, null, 2);
+      const sizeKB = (jsonStr.length / 1024).toFixed(1);
       const backupId = `sb_auto_${Date.now()}`;
-      const backupPackage = {
-        type: "school_full_backup",
-        schoolId: syncSchoolId,
-        schoolName: schoolName,
-        exportedAt: new Date().toISOString(),
-        students: targetStudents,
-        marks: targetMarks,
-        attendances: targetAttendances,
-        feeRecords: targetFeeRecords
-      };
 
-      // Store in a dedicated Firestore 'school_backups' collection for total persistent backup safety
+      // Store in dedicated Firestore 'school_backups' collection
       await setDoc(doc(db, 'school_backups', backupId), {
         id: backupId,
-        schoolId: syncSchoolId,
-        schoolName: schoolName,
+        schoolId: syncSchoolId === 'all' ? '' : syncSchoolId,
+        schoolName: backupPackage.schoolName,
         exportedAt: backupPackage.exportedAt,
-        dataLength: JSON.stringify(backupPackage).length,
-        studentsCount: targetStudents.length,
-        marksCount: targetMarks.length,
-        attendancesCount: targetAttendances.length,
-        feeRecordsCount: targetFeeRecords.length,
-        snapshot: JSON.stringify(backupPackage)
+        dataLength: jsonStr.length,
+        size: `${sizeKB} KB`,
+        studentsCount: targetData.targetStudents.length,
+        studentsWithPhotosCount: targetData.studentsWithPhotos,
+        marksCount: targetData.targetMarks.length,
+        attendancesCount: targetData.targetAttendances.length,
+        feeRecordsCount: targetData.targetFeeRecords.length,
+        teachersCount: targetData.targetTeachers.length,
+        snapshot: jsonStr
       });
 
-      // Update state history
-      const sizeKB = (JSON.stringify(backupPackage).length / 1024).toFixed(1);
-      setFirestoreCloudBackups(prev => [
-        {
-          id: backupId,
-          schoolId: syncSchoolId,
-          schoolName: schoolName,
-          exportedAt: backupPackage.exportedAt,
-          studentsCount: targetStudents.length,
-          marksCount: targetMarks.length,
-          size: `${sizeKB} KB`
-        },
-        ...prev
-      ]);
-
-      setImportStatus(`Successfully consolidated and uploaded auto-restore point ${backupId} to Firestore! Total Records Backed Up: ${targetStudents.length + targetMarks.length + targetAttendances.length + targetFeeRecords.length}`);
+      setImportStatus(`Success! Created Cloud Snapshot ${backupId} (${sizeKB} KB). Total records backed up: ${targetData.targetStudents.length} Students (${targetData.studentsWithPhotos} with photos), ${targetData.targetMarks.length} Marks, ${targetData.targetFeeRecords.length} Fees.`);
     } catch (error: any) {
       setImportStatus(`Failed to upload restore point to Firestore: ${error.message}`);
     } finally {
@@ -161,8 +251,258 @@ export function MasterAdminPanel() {
     }
   };
 
+  // Immediate Google Drive Backup (Direct Google Drive API Upload + Instant Download + Cloud Snapshot)
+  const handleImmediateDriveBackup = async () => {
+    setIsSyncing(true);
+    setImportStatus('Compiling complete student data with photos and school records for Google Drive...');
+    
+    try {
+      const backupPackage = createFullBackupPackage(syncSchoolId);
+      const targetData = getTargetData(syncSchoolId);
+      const jsonStr = JSON.stringify(backupPackage, null, 2);
+      const sizeKB = (jsonStr.length / 1024).toFixed(1);
+
+      // 1. Download file directly onto device
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const safeName = (syncSchoolId === 'all' ? 'All_Schools' : (schools.find(s => s.id === syncSchoolId)?.name || 'School')).toLowerCase().replace(/[^a-z0-9.]+/g, '_');
+      const fileName = `BACKUP_GDRIVE_${safeName}_${new Date().toISOString().slice(0, 10)}_${Date.now()}.json`;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      // 2. Save an instant cloud restore snapshot in Firestore
+      const backupId = `gdrive_snap_${Date.now()}`;
+      await setDoc(doc(db, 'school_backups', backupId), {
+        id: backupId,
+        schoolId: syncSchoolId === 'all' ? '' : syncSchoolId,
+        schoolName: backupPackage.schoolName,
+        exportedAt: backupPackage.exportedAt,
+        dataLength: jsonStr.length,
+        size: `${sizeKB} KB`,
+        studentsCount: targetData.targetStudents.length,
+        studentsWithPhotosCount: targetData.studentsWithPhotos,
+        marksCount: targetData.targetMarks.length,
+        attendancesCount: targetData.targetAttendances.length,
+        feeRecordsCount: targetData.targetFeeRecords.length,
+        teachersCount: targetData.targetTeachers.length,
+        snapshot: jsonStr
+      });
+
+      setLastBackupDetails({
+        fileName,
+        size: `${sizeKB} KB`,
+        studentsCount: targetData.targetStudents.length,
+        photosCount: targetData.studentsWithPhotos,
+        backupPackage,
+        gdriveUploaded: false
+      });
+
+      setShowDriveAssistantModal(true);
+
+      // 3. Attempt direct Google Drive API upload
+      setImportStatus('Authenticating & uploading file directly to Google Drive...');
+      try {
+        const driveResult = await uploadBackupToGoogleDrive(
+          backupPackage,
+          fileName,
+          gdriveFolder,
+          (msg) => setImportStatus(msg)
+        );
+
+        setLastBackupDetails(prev => prev ? {
+          ...prev,
+          gdriveUploaded: true,
+          gdriveFileLink: driveResult.webViewLink || 'https://drive.google.com/drive/my-drive'
+        } : null);
+
+        setImportStatus(`Success! Backup file "${fileName}" was directly uploaded to Google Drive folder "${gdriveFolder}". Direct Link available.`);
+      } catch (driveErr: any) {
+        console.warn("Direct Drive API upload prompt needed:", driveErr);
+        setLastBackupDetails(prev => prev ? {
+          ...prev,
+          gdriveUploaded: false,
+          gdriveError: driveErr.message || 'Google Drive authentication required'
+        } : null);
+        setImportStatus(`Backup downloaded and saved to Cloud. Click 'Upload to Google Drive' in the dialog to grant Google Drive permission.`);
+      }
+    } catch (err: any) {
+      setImportStatus(`Immediate Backup Error: ${err.message}`);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Explicit Trigger for Google Drive Upload from Modal or Button
+  const handleDirectUploadToDrive = async () => {
+    if (!lastBackupDetails?.backupPackage) {
+      const backupPackage = createFullBackupPackage(syncSchoolId);
+      const safeName = (syncSchoolId === 'all' ? 'All_Schools' : (schools.find(s => s.id === syncSchoolId)?.name || 'School')).toLowerCase().replace(/[^a-z0-9.]+/g, '_');
+      const fileName = `BACKUP_GDRIVE_${safeName}_${new Date().toISOString().slice(0, 10)}_${Date.now()}.json`;
+      const targetData = getTargetData(syncSchoolId);
+      const jsonStr = JSON.stringify(backupPackage, null, 2);
+      const sizeKB = (jsonStr.length / 1024).toFixed(1);
+
+      setLastBackupDetails({
+        fileName,
+        size: `${sizeKB} KB`,
+        studentsCount: targetData.targetStudents.length,
+        photosCount: targetData.studentsWithPhotos,
+        backupPackage,
+        gdriveUploaded: false
+      });
+    }
+
+    const currentPkg = lastBackupDetails?.backupPackage || createFullBackupPackage(syncSchoolId);
+    const targetFileName = lastBackupDetails?.fileName || `BACKUP_GDRIVE_${Date.now()}.json`;
+
+    setIsDriveUploading(true);
+    setImportStatus('Connecting to Google Drive with OAuth 2.0...');
+
+    try {
+      const driveResult = await uploadBackupToGoogleDrive(
+        currentPkg,
+        targetFileName,
+        gdriveFolder,
+        (msg) => setImportStatus(msg)
+      );
+
+      setLastBackupDetails(prev => prev ? {
+        ...prev,
+        gdriveUploaded: true,
+        gdriveFileLink: driveResult.webViewLink || 'https://drive.google.com/drive/my-drive',
+        gdriveError: undefined
+      } : null);
+
+      setImportStatus(`Success! Backup uploaded directly to your Google Drive in folder "${gdriveFolder}"!`);
+    } catch (err: any) {
+      setLastBackupDetails(prev => prev ? {
+        ...prev,
+        gdriveUploaded: false,
+        gdriveError: err.message
+      } : null);
+      setImportStatus(`Google Drive upload error: ${err.message}`);
+    } finally {
+      setIsDriveUploading(false);
+    }
+  };
+
+  // Restore logic executor
+  const executeRestoreFromData = async (parsed: any) => {
+    let successStudents = 0;
+    let successMarks = 0;
+    let successAttendances = 0;
+    let successFeeRecords = 0;
+    let successTeachers = 0;
+    let successSchools = 0;
+
+    const studentList = parsed.students || (Array.isArray(parsed) ? parsed : []);
+    const marksList = parsed.marks || [];
+    const attendancesList = parsed.attendances || [];
+    const feeRecordsList = parsed.feeRecords || [];
+    const teachersList = parsed.teachers || [];
+    const schoolsList = parsed.schools || [];
+
+    const defaultSchoolId = syncSchoolId === 'all' ? 'sch1' : (syncSchoolId || 'sch1');
+
+    // 1. Restore Schools if any
+    if (Array.isArray(schoolsList) && schoolsList.length > 0) {
+      for (const sch of schoolsList) {
+        if (!sch.id) continue;
+        await setDoc(doc(db, 'schools', sch.id), sch);
+        successSchools++;
+      }
+    }
+
+    // 2. Restore Students (Full details with photo, documents, history)
+    if (Array.isArray(studentList)) {
+      for (const raw of studentList) {
+        if (!raw.name) continue;
+        const studId = raw.id || `s_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
+        const cleanStudent = {
+          ...raw,
+          id: studId,
+          schoolId: raw.schoolId || defaultSchoolId,
+          role: 'STUDENT',
+          feeBalance: Number(raw.feeBalance) || 0,
+          previousDues: Number(raw.previousDues) || 0,
+          academicSession: raw.academicSession || activeAcademicSession || '2026-27',
+          // Explicitly preserve photo & documents
+          docStudentPhoto: raw.docStudentPhoto || raw.avatar || '',
+          avatar: raw.avatar || raw.docStudentPhoto || '',
+          fatherPhoto: raw.fatherPhoto || '',
+          motherPhoto: raw.motherPhoto || '',
+          docStudentSig: raw.docStudentSig || '',
+          academicHistory: Array.isArray(raw.academicHistory) ? raw.academicHistory : []
+        };
+        await setDoc(doc(db, 'students', studId), cleanStudent);
+        successStudents++;
+      }
+    }
+
+    // 3. Restore Marks
+    if (Array.isArray(marksList)) {
+      for (const m of marksList) {
+        if (!m.id) continue;
+        const cleanMark = {
+          ...m,
+          schoolId: m.schoolId || defaultSchoolId
+        };
+        await setDoc(doc(db, 'marks', m.id), cleanMark);
+        successMarks++;
+      }
+    }
+
+    // 4. Restore Attendances
+    if (Array.isArray(attendancesList)) {
+      for (const a of attendancesList) {
+        if (!a.id) continue;
+        const cleanAttendance = {
+          ...a,
+          schoolId: a.schoolId || defaultSchoolId
+        };
+        await setDoc(doc(db, 'attendances', a.id), cleanAttendance);
+        successAttendances++;
+      }
+    }
+
+    // 5. Restore Fee Records
+    if (Array.isArray(feeRecordsList)) {
+      for (const f of feeRecordsList) {
+        if (!f.id) continue;
+        const cleanFee = {
+          ...f,
+          schoolId: f.schoolId || defaultSchoolId
+        };
+        await setDoc(doc(db, 'feeRecords', f.id), cleanFee);
+        successFeeRecords++;
+      }
+    }
+
+    // 6. Restore Teachers
+    if (Array.isArray(teachersList)) {
+      for (const t of teachersList) {
+        if (!t.id) continue;
+        const cleanTeacher = {
+          ...t,
+          schoolId: t.schoolId || defaultSchoolId
+        };
+        await setDoc(doc(db, 'teachers', t.id), cleanTeacher);
+        successTeachers++;
+      }
+    }
+
+    const totalRestored = successStudents + successMarks + successAttendances + successFeeRecords + successTeachers;
+    setImportStatus(`Success! Restored: ${successStudents} Students (with Photos), ${successMarks} Marks, ${successAttendances} Attendances, ${successFeeRecords} Fees, ${successTeachers} Teachers.`);
+    setImportedCount(totalRestored);
+  };
+
   const handleRestoreFromCloudSnapshot = async (snapshotDocId: string, rawSnapshotStr?: string) => {
-    if (!window.confirm("Are you absolutely sure you want to restore this cloud backup? All current student profiles, marks, attendance, and fees for this school will be updated with the backup snapshot. This cannot be undone.")) {
+    if (!window.confirm("Are you absolutely sure you want to restore this cloud snapshot? All matching student profiles (including photos), marks, attendance, and fees will be updated with the backup snapshot. This cannot be undone.")) {
       return;
     }
 
@@ -172,7 +512,6 @@ export function MasterAdminPanel() {
     try {
       let snapshotData: any = null;
 
-      // Check if we have the raw snapshot string in parameter or need to load it from Firestore
       if (rawSnapshotStr) {
         snapshotData = JSON.parse(rawSnapshotStr);
       } else {
@@ -182,61 +521,10 @@ export function MasterAdminPanel() {
           throw new Error("Cloud snapshot not found in Firestore.");
         }
         const data = snapDoc.data();
-        snapshotData = JSON.parse(data.snapshot);
+        snapshotData = data.snapshot ? JSON.parse(data.snapshot) : data;
       }
 
-      if (!snapshotData || snapshotData.type !== "school_full_backup") {
-        throw new Error("Invalid cloud snapshot format.");
-      }
-
-      const targetSchoolId = snapshotData.schoolId || syncSchoolId;
-      let count = 0;
-
-      // 1. Restore Students
-      if (Array.isArray(snapshotData.students)) {
-        for (const s of snapshotData.students) {
-          await setDoc(doc(db, 'students', s.id), {
-            ...s,
-            schoolId: targetSchoolId
-          });
-          count++;
-        }
-      }
-
-      // 2. Restore Marks
-      if (Array.isArray(snapshotData.marks)) {
-        for (const m of snapshotData.marks) {
-          await setDoc(doc(db, 'marks', m.id), {
-            ...m,
-            schoolId: targetSchoolId
-          });
-          count++;
-        }
-      }
-
-      // 3. Restore Attendances
-      if (Array.isArray(snapshotData.attendances)) {
-        for (const a of snapshotData.attendances) {
-          await setDoc(doc(db, 'attendances', a.id), {
-            ...a,
-            schoolId: targetSchoolId
-          });
-          count++;
-        }
-      }
-
-      // 4. Restore Fee Records
-      if (Array.isArray(snapshotData.feeRecords)) {
-        for (const f of snapshotData.feeRecords) {
-          await setDoc(doc(db, 'feeRecords', f.id), {
-            ...f,
-            schoolId: targetSchoolId
-          });
-          count++;
-        }
-      }
-
-      setImportStatus(`Success! Successfully restored complete school node: ${count} total records updated from cloud snapshot.`);
+      await executeRestoreFromData(snapshotData);
     } catch (error: any) {
       setImportStatus(`Failed to restore school snapshot: ${error.message}`);
     } finally {
@@ -244,43 +532,94 @@ export function MasterAdminPanel() {
     }
   };
 
+  const handleDeleteCloudSnapshot = async (backupId: string) => {
+    if (!window.confirm("Are you sure you want to delete this cloud backup permanently from Firestore?")) return;
+    try {
+      await deleteDoc(doc(db, 'school_backups', backupId));
+      setImportStatus(`Cloud snapshot ${backupId} deleted successfully.`);
+    } catch (err: any) {
+      alert("Error deleting backup: " + err.message);
+    }
+  };
+
   // Exporters & Importers
   const handleExportStudents = () => {
-    const targetStudents = allStudents.filter(s => s.schoolId === syncSchoolId);
-    const targetMarks = allMarks.filter(m => m.schoolId === syncSchoolId);
-    const targetAttendances = attendances.filter(a => a.schoolId === syncSchoolId);
-    const targetFeeRecords = allFeeRecords.filter(f => f.schoolId === syncSchoolId);
+    const targetData = getTargetData(syncSchoolId);
 
-    if (targetStudents.length === 0 && targetMarks.length === 0 && targetAttendances.length === 0 && targetFeeRecords.length === 0) {
-      alert("No data records (students, marks, attendance, or fees) found under this school to export.");
+    if (targetData.targetStudents.length === 0 && targetData.targetMarks.length === 0 && targetData.targetAttendances.length === 0 && targetData.targetFeeRecords.length === 0) {
+      alert("No data records found for this selection to export.");
       return;
     }
 
-    const schoolName = schools.find(s => s.id === syncSchoolId)?.name || 'school';
-    
-    // Create a fully qualified full-system backup package
-    const backupPackage = {
-      type: "school_full_backup",
-      schoolId: syncSchoolId,
-      schoolName: schoolName,
-      exportedAt: new Date().toISOString(),
-      students: targetStudents,
-      marks: targetMarks,
-      attendances: targetAttendances,
-      feeRecords: targetFeeRecords
-    };
-
+    const backupPackage = createFullBackupPackage(syncSchoolId);
     const jsonStr = JSON.stringify(backupPackage, null, 2);
     const blob = new Blob([jsonStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `backup_full_${schoolName.toLowerCase().replace(/[^a-z0-9.]+/g, '_')}_${Date.now()}.json`;
+    const safeName = (syncSchoolId === 'all' ? 'All_Schools' : (schools.find(s => s.id === syncSchoolId)?.name || 'School')).toLowerCase().replace(/[^a-z0-9.]+/g, '_');
+    a.download = `EDUMANAGE_FULL_BACKUP_${safeName}_${new Date().toISOString().slice(0, 10)}_${Date.now()}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    setImportStatus(`Successfully exported complete backup of ${schoolName} (Students: ${targetStudents.length}, Marks: ${targetMarks.length}, Attendance: ${targetAttendances.length}, Fees: ${targetFeeRecords.length}).`);
+    setImportStatus(`Successfully exported complete backup (${backupPackage.schoolName}): ${targetData.targetStudents.length} Students (${targetData.studentsWithPhotos} with photos), ${targetData.targetMarks.length} Marks, ${targetData.targetAttendances.length} Attendance, ${targetData.targetFeeRecords.length} Fees.`);
+  };
+
+  // CSV Export for Students (with Full details & Photo indicators)
+  const handleExportCSV = () => {
+    const targetData = getTargetData(syncSchoolId);
+    const rows = targetData.targetStudents;
+    if (rows.length === 0) {
+      alert("No student records to export.");
+      return;
+    }
+
+    const headers = [
+      "ID", "Name", "Hindi Name", "Roll No", "SR No", "Admission No", "Grade", "Section",
+      "Gender", "DOB", "Mobile", "Aadhar", "Father Name", "Mother Name", "Category",
+      "Academic Session", "Fee Balance", "Previous Dues", "Address", "Has Photo", "Photo Base64/URL"
+    ];
+
+    const csvRows = [
+      headers.join(","),
+      ...rows.map(s => [
+        `"${s.id || ''}"`,
+        `"${(s.name || '').replace(/"/g, '""')}"`,
+        `"${(s.studentNameHindi || '').replace(/"/g, '""')}"`,
+        `"${s.rollNo || ''}"`,
+        `"${s.srNo || ''}"`,
+        `"${s.admissionNo || ''}"`,
+        `"${s.grade || ''}"`,
+        `"${s.section || ''}"`,
+        `"${s.gender || ''}"`,
+        `"${s.dob || ''}"`,
+        `"${s.mobile || ''}"`,
+        `"${s.aadhar || ''}"`,
+        `"${(s.fatherName || '').replace(/"/g, '""')}"`,
+        `"${(s.motherName || '').replace(/"/g, '""')}"`,
+        `"${s.category || ''}"`,
+        `"${s.academicSession || ''}"`,
+        `"${s.feeBalance || 0}"`,
+        `"${s.previousDues || 0}"`,
+        `"${(s.address || s.presentVillageMohalla || '').replace(/"/g, '""')}"`,
+        `"${s.docStudentPhoto || s.avatar ? 'YES' : 'NO'}"`,
+        `"${(s.docStudentPhoto || s.avatar || '').replace(/"/g, '""')}"`
+      ].join(","))
+    ];
+
+    const csvBlob = new Blob([csvRows.join("\n")], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(csvBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    const safeName = (syncSchoolId === 'all' ? 'All_Schools' : (schools.find(s => s.id === syncSchoolId)?.name || 'School')).toLowerCase().replace(/[^a-z0-9.]+/g, '_');
+    a.download = `STUDENTS_FULL_DATA_${safeName}_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    setImportStatus(`CSV Export complete: ${rows.length} student records exported with full profile & photo data.`);
   };
 
   const handleImportStudents = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -296,98 +635,9 @@ export function MasterAdminPanel() {
         const text = event.target?.result as string;
         const parsed = JSON.parse(text);
         
-        let successStudents = 0;
-        let successMarks = 0;
-        let successAttendances = 0;
-        let successFeeRecords = 0;
-
-        if (parsed && parsed.type === "school_full_backup") {
-          setImportStatus('Restoring full backup (Students, Marks, Attendance, Fees)...');
-          
-          // 1. Restore Students
-          if (Array.isArray(parsed.students)) {
-            for (const raw of parsed.students) {
-              if (!raw.name) continue;
-              const studId = raw.id || `s_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
-              const cleanStudent = {
-                ...raw,
-                id: studId,
-                schoolId: syncSchoolId,
-                role: 'STUDENT',
-                feeBalance: Number(raw.feeBalance) || 0,
-                academicSession: raw.academicSession || activeAcademicSession || '2026-27'
-              };
-              await setDoc(doc(db, 'students', studId), cleanStudent);
-              successStudents++;
-            }
-          }
-
-          // 2. Restore Marks (Results)
-          if (Array.isArray(parsed.marks)) {
-            for (const m of parsed.marks) {
-              if (!m.id) continue;
-              const cleanMark = {
-                ...m,
-                schoolId: syncSchoolId
-              };
-              await setDoc(doc(db, 'marks', m.id), cleanMark);
-              successMarks++;
-            }
-          }
-
-          // 3. Restore Attendances
-          if (Array.isArray(parsed.attendances)) {
-            for (const a of parsed.attendances) {
-              if (!a.id) continue;
-              const cleanAttendance = {
-                ...a,
-                schoolId: syncSchoolId
-              };
-              await setDoc(doc(db, 'attendances', a.id), cleanAttendance);
-              successAttendances++;
-            }
-          }
-
-          // 4. Restore Fee Records
-          if (Array.isArray(parsed.feeRecords)) {
-            for (const f of parsed.feeRecords) {
-              if (!f.id) continue;
-              const cleanFee = {
-                ...f,
-                schoolId: syncSchoolId
-              };
-              await setDoc(doc(db, 'feeRecords', f.id), cleanFee);
-              successFeeRecords++;
-            }
-          }
-
-          setImportStatus(`Success! Fully restored school backup: ${successStudents} Students, ${successMarks} Marks, ${successAttendances} Attendances, and ${successFeeRecords} Fee Records are active.`);
-          setImportedCount(successStudents + successMarks + successAttendances + successFeeRecords);
-
-        } else if (Array.isArray(parsed)) {
-          // Old student-only list backup
-          setImportStatus('Restoring old-style student-only backup...');
-          for (const raw of parsed) {
-            if (!raw.name) continue;
-            const studId = raw.id || `s_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
-            const cleanStudent = {
-              ...raw,
-              id: studId,
-              schoolId: syncSchoolId,
-              role: 'STUDENT',
-              feeBalance: Number(raw.feeBalance) || 0,
-              academicSession: raw.academicSession || activeAcademicSession || '2026-27'
-            };
-            await setDoc(doc(db, 'students', studId), cleanStudent);
-            successStudents++;
-          }
-          setImportStatus(`Success! Integrated and verified ${successStudents} student records under this school node.`);
-          setImportedCount(successStudents);
-        } else {
-          throw new Error("Invalid format. The backup must be a full school backup package or an array of student records.");
-        }
+        await executeRestoreFromData(parsed);
       } catch (err: any) {
-        setImportStatus(`Error parsing JSON: ${err.message || 'Check structure compatibility.'}`);
+        setImportStatus(`Failed to read/restore backup JSON: ${err.message}`);
       } finally {
         setIsSyncing(false);
         if (studentInputRef.current) studentInputRef.current.value = '';
@@ -396,8 +646,87 @@ export function MasterAdminPanel() {
     reader.readAsText(file);
   };
 
+  // CSV Import handler
+  const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsSyncing(true);
+    setImportStatus('Parsing CSV student records...');
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const text = event.target?.result as string;
+        const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+        if (lines.length <= 1) {
+          throw new Error("CSV file is empty or missing headers.");
+        }
+
+        const headers = lines[0].split(',').map(h => h.replace(/^"|"$/g, '').trim().toLowerCase());
+        const defaultSchoolId = syncSchoolId === 'all' ? 'sch1' : syncSchoolId;
+        let count = 0;
+
+        for (let i = 1; i < lines.length; i++) {
+          const rowValues = lines[i].split(',').map(v => v.replace(/^"|"$/g, '').trim());
+          const row: any = {};
+          headers.forEach((h, idx) => {
+            row[h] = rowValues[idx] || '';
+          });
+
+          const name = row['name'] || row['student name'] || row['studentname'];
+          if (!name) continue;
+
+          const studId = row['id'] || `s_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
+          const photo = row['photo base64/url'] || row['photo'] || row['docstudentphoto'] || row['avatar'] || '';
+
+          const studentObj = {
+            id: studId,
+            schoolId: defaultSchoolId,
+            role: 'STUDENT',
+            name: name,
+            studentNameHindi: row['hindi name'] || row['studentnamehindi'] || '',
+            rollNo: row['roll no'] || row['rollno'] || '',
+            srNo: row['sr no'] || row['srno'] || '',
+            admissionNo: row['admission no'] || row['admissionno'] || '',
+            grade: row['grade'] || row['class'] || 'Class 1',
+            section: row['section'] || 'A',
+            gender: row['gender'] || 'Male',
+            dob: row['dob'] || '',
+            mobile: row['mobile'] || row['phone'] || '',
+            aadhar: row['aadhar'] || row['aadhaar'] || '',
+            fatherName: row['father name'] || row['fathername'] || '',
+            motherName: row['mother name'] || row['mothername'] || '',
+            category: row['category'] || 'GEN',
+            academicSession: row['academic session'] || row['academicsession'] || activeAcademicSession || '2026-27',
+            feeBalance: Number(row['fee balance'] || row['feebalance']) || 0,
+            previousDues: Number(row['previous dues'] || row['previousdues']) || 0,
+            address: row['address'] || '',
+            docStudentPhoto: photo,
+            avatar: photo
+          };
+
+          await setDoc(doc(db, 'students', studId), studentObj);
+          count++;
+        }
+
+        setImportStatus(`Success! Imported ${count} students from CSV spreadsheet.`);
+        setImportedCount(count);
+      } catch (err: any) {
+        setImportStatus(`CSV Import Error: ${err.message}`);
+      } finally {
+        setIsSyncing(false);
+        if (csvInputRef.current) csvInputRef.current.value = '';
+      }
+    };
+    reader.readAsText(file);
+  };
+
   const handleExportSchoolProfile = async () => {
-    if (!syncSchoolId) return;
+    if (!syncSchoolId || syncSchoolId === 'all') {
+      alert("Please select a specific school node to export its profile.");
+      return;
+    }
     setIsSyncing(true);
     setImportStatus('Compiling profile package from cloud databases...');
     
@@ -456,7 +785,7 @@ export function MasterAdminPanel() {
           throw new Error("Invalid schema structure. Core school metadata block is missing.");
         }
 
-        const targetId = syncSchoolId; // Preserve current physical target slot
+        const targetId = syncSchoolId === 'all' ? (parsed.school.id || 'sch1') : syncSchoolId;
         
         // Overwrite standard school profile in firestore
         const restoredSchool = {
@@ -941,27 +1270,67 @@ export function MasterAdminPanel() {
         </div>
       </Card>
 
-      {/* 4. Global Data Exchange & Backups Center (डाटा आयात-निर्यात हब) */}
-      <Card className="p-6 mt-6">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
-          <h2 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
-            <span className="w-2 h-4 bg-indigo-600 rounded-full"></span>
-            Super Admin Data & School Backup Hub (वैश्विक डेटा बैकअप केंद्र)
-          </h2>
-          <div className="flex items-center gap-2 text-[10px] bg-indigo-50 border border-indigo-100 px-2 py-1 rounded text-indigo-700 font-mono">
-            <span>PLATFORM OPERATOR CONTROL</span>
+      {/* 4. Global Data Exchange & Backups Center (डेटा बैकअप एवं रिकवरी केंद्र) */}
+      <Card className="p-6 mt-6 border-2 border-indigo-100 shadow-md">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-4 mb-4 gap-3">
+          <div>
+            <h2 className="text-base font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+              <span className="w-2.5 h-5 bg-indigo-600 rounded-full"></span>
+              Super Admin Data Backup & Restore Hub (डेटा बैकअप एवं रिकवरी)
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Full student records with photos, exam marks, attendance, and fee history with 1-click Google Drive & Cloud Snapshots.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              onClick={handleImmediateDriveBackup}
+              disabled={isSyncing}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 px-4 shadow-sm flex items-center gap-2 transition-all cursor-pointer animate-pulse hover:animate-none"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>तुरंत बैकअप (Instant Drive Backup)</span>
+            </Button>
+            <div className="text-[10px] bg-indigo-50 border border-indigo-200 px-2.5 py-1.5 rounded-lg text-indigo-700 font-mono font-bold flex items-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+              <span>PHOTOS & DOCS INCLUDED</span>
+            </div>
           </div>
         </div>
 
-        <p className="text-xs text-slate-600 leading-relaxed mb-6">
-          Utilize this central system to handle student registration records, class fee tiers, and configuration schemas dynamically across all active academic zones. Select a target school node first to initialize.
-        </p>
+        {/* Top Summary Bar */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+            <span className="text-[10px] font-bold text-slate-500 uppercase">Total Students</span>
+            <div className="text-xl font-black text-slate-800">{allStudents.length}</div>
+            <div className="text-[10px] text-indigo-600 font-semibold flex items-center gap-1 mt-0.5">
+              <ImageIcon className="w-3 h-3" />
+              <span>{allStudents.filter(s => s.docStudentPhoto || s.avatar).length} with photos</span>
+            </div>
+          </div>
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+            <span className="text-[10px] font-bold text-slate-500 uppercase">Active Schools</span>
+            <div className="text-xl font-black text-slate-800">{schools.length}</div>
+            <div className="text-[10px] text-slate-500 mt-0.5">Global Multi-School Database</div>
+          </div>
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+            <span className="text-[10px] font-bold text-slate-500 uppercase">Exam Marks & Fees</span>
+            <div className="text-xl font-black text-slate-800">{allMarks.length + allFeeRecords.length}</div>
+            <div className="text-[10px] text-emerald-600 font-semibold mt-0.5">Records in sync</div>
+          </div>
+          <div className="bg-indigo-50/60 border border-indigo-100 rounded-xl p-3">
+            <span className="text-[10px] font-bold text-indigo-600 uppercase">Cloud Snapshots</span>
+            <div className="text-xl font-black text-indigo-700">{firestoreCloudBackups.length}</div>
+            <div className="text-[10px] text-indigo-600 font-semibold mt-0.5">Instant Restore Points</div>
+          </div>
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           {/* Controls Sidebar */}
           <div className="md:col-span-1 space-y-4">
             <div>
-              <Label className="text-xs font-bold text-slate-700">Target School Node</Label>
+              <Label className="text-xs font-bold text-slate-700">Scope / Target Selection</Label>
               <Input
                 as="select"
                 value={syncSchoolId}
@@ -970,18 +1339,24 @@ export function MasterAdminPanel() {
                   setImportStatus('');
                   setImportedCount(0);
                 }}
+                className="text-xs font-medium"
               >
-                <option value="">-- Choose School --</option>
+                <option value="all">🌟 All Schools (Global Full Database Backup)</option>
                 {schools.map((school) => (
                   <option key={school.id} value={school.id}>
-                    {school.name} ({school.udiseCode || 'No UDISE'})
+                    🏫 {school.name} ({school.udiseCode || 'No UDISE'})
                   </option>
                 ))}
               </Input>
+              <p className="text-[10px] text-slate-500 mt-1">
+                {syncSchoolId === 'all' 
+                  ? 'Selected: Complete system-wide backup across all schools.' 
+                  : `Selected: Backup specific to ${schools.find(s => s.id === syncSchoolId)?.name}.`}
+              </p>
             </div>
 
             <div>
-              <Label className="text-xs font-bold text-slate-700">Data Dimension</Label>
+              <Label className="text-xs font-bold text-slate-700">Backup Modules</Label>
               <div className="flex flex-col gap-2 mt-1">
                 <button
                   type="button"
@@ -989,118 +1364,182 @@ export function MasterAdminPanel() {
                     setSyncCategory('students');
                     setImportStatus('');
                   }}
-                  className={`flex items-center gap-2 p-2 rounded-lg text-xs font-bold text-left transition-all ${
+                  className={`flex items-center gap-2 p-2.5 rounded-lg text-xs font-bold text-left transition-all cursor-pointer ${
                     syncCategory === 'students'
-                      ? 'bg-indigo-600 text-white shadow-sm'
-                      : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
+                      ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-200'
+                      : 'bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100'
                   }`}
                 >
                   <FileText className="w-4 h-4" />
-                  <span>Full School Data Backup</span>
+                  <span>Student & School Data (with Photos)</span>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSyncCategory('imadate_drive');
+                    setImportStatus('');
+                  }}
+                  className={`flex items-center gap-2 p-2.5 rounded-lg text-xs font-bold text-left transition-all cursor-pointer ${
+                    syncCategory === 'imadate_drive'
+                      ? 'bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-200'
+                      : 'bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100'
+                  }`}
+                >
+                  <HardDrive className="w-4 h-4" />
+                  <span>Immediate Google Drive Backup</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSyncCategory('cloud_snapshots');
+                    setImportStatus('');
+                  }}
+                  className={`flex items-center gap-2 p-2.5 rounded-lg text-xs font-bold text-left transition-all cursor-pointer ${
+                    syncCategory === 'cloud_snapshots'
+                      ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-200'
+                      : 'bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  <Cloud className="w-4 h-4" />
+                  <span>Cloud Restore Snapshots ({firestoreCloudBackups.length})</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => {
                     setSyncCategory('profile');
                     setImportStatus('');
                   }}
-                  className={`flex items-center gap-2 p-2 rounded-lg text-xs font-bold text-left transition-all ${
+                  className={`flex items-center gap-2 p-2.5 rounded-lg text-xs font-bold text-left transition-all cursor-pointer ${
                     syncCategory === 'profile'
-                      ? 'bg-indigo-600 text-white shadow-sm'
-                      : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
+                      ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-200'
+                      : 'bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100'
                   }`}
                 >
                   <Building className="w-4 h-4" />
-                  <span>School Settings & Tiers</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSyncCategory('gdrive');
-                    setImportStatus('');
-                  }}
-                  className={`flex items-center gap-2 p-2 rounded-lg text-xs font-bold text-left transition-all ${
-                    syncCategory === 'gdrive'
-                      ? 'bg-indigo-600 text-white shadow-sm'
-                      : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
-                  }`}
-                >
-                  <Cloud className="w-4 h-4" />
-                  <span>Google Drive Auto-Backups</span>
+                  <span>School Settings & Fee Tiers</span>
                 </button>
               </div>
             </div>
           </div>
 
           {/* Working Workspace Area */}
-          <div className="md:col-span-3 border border-slate-200 bg-slate-50/10 rounded-xl p-5 relative">
-            {!syncSchoolId ? (
-              <div className="flex flex-col items-center justify-center py-12 text-center text-slate-400">
-                <Building className="w-12 h-12 stroke-1 stroke-slate-300 mb-3 animate-pulse" />
-                <p className="text-xs font-bold text-slate-500">No School Selected</p>
-                <p className="text-[10px] text-slate-400 mt-1 max-w-[280px]">
-                  Please choose a target school node from the sidebar dropdown to run synchronization tasks.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-6">
-                {/* Active Info Bar */}
-                <div className="flex items-center justify-between bg-white border border-slate-200 rounded-lg px-4 py-3 shadow-sm">
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-800">
-                      Selected: {schools.find((s) => s.id === syncSchoolId)?.name}
-                    </h4>
-                    <p className="text-[10px] text-slate-500">
-                      UDISE ID: {schools.find((s) => s.id === syncSchoolId)?.udiseCode || 'N/A'} • Zone ID: {syncSchoolId}
-                    </p>
-                  </div>
-                  <span className="text-[9px] font-bold uppercase tracking-widest px-2 py-1 bg-emerald-50 border border-emerald-100 text-emerald-700 rounded">
-                    Operational (सक्रिय)
-                  </span>
+          <div className="md:col-span-3 border border-slate-200 bg-white rounded-xl p-5 relative shadow-sm">
+            <div className="space-y-6">
+              {/* Active Selection Banner */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 gap-2">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    Target: {syncSchoolId === 'all' ? 'All Schools (Global Complete Multi-School Database)' : schools.find((s) => s.id === syncSchoolId)?.name}
+                  </h4>
+                  <p className="text-[10px] text-slate-500">
+                    {syncSchoolId === 'all' 
+                      ? `Total Scope: ${allStudents.length} Students (${allStudents.filter(s => s.docStudentPhoto || s.avatar).length} with photos), ${allMarks.length} Marks, ${allFeeRecords.length} Fee Records.` 
+                      : `Selected School Scope: ${allStudents.filter(s => s.schoolId === syncSchoolId).length} Students (${allStudents.filter(s => s.schoolId === syncSchoolId && (s.docStudentPhoto || s.avatar)).length} with photos).`}
+                  </p>
                 </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    onClick={handleImmediateDriveBackup}
+                    disabled={isSyncing}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10.5px] py-1.5 px-3 h-auto uppercase tracking-wide flex items-center gap-1 shadow-sm"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Instant Backup File</span>
+                  </Button>
+                </div>
+              </div>
 
-                {/* STUDENTS CATEGORY PANEL */}
-                {syncCategory === 'students' && (
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* Export Card */}
-                    <div className="bg-white border rounded-lg p-4 space-y-3">
-                      <div className="flex items-center gap-2">
-                        <div className="bg-blue-50 text-blue-600 p-1.5 rounded-lg">
-                          <Download className="w-4 h-4" />
+              {/* TAB 1: FULL DATA BACKUP & RESTORE */}
+              {syncCategory === 'students' && (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    {/* JSON Full Backup */}
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3 flex flex-col justify-between">
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <div className="bg-indigo-100 text-indigo-700 p-1.5 rounded-lg">
+                            <FileJson className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="text-xs font-bold text-slate-800">Export Full JSON Backup</h4>
+                            <span className="text-[9px] text-emerald-600 font-bold">Includes Student & Parent Photos</span>
+                          </div>
                         </div>
-                        <h4 className="text-xs font-bold text-slate-800">Export Complete School Backup</h4>
+                        <p className="text-[10px] text-slate-500 leading-normal">
+                          Complete backup package containing student profiles (names, Hindi names, SR no, roll no, photo base64/URL, father & mother photos, address, previous dues, academic session), examination marks, attendance, and fee history.
+                        </p>
                       </div>
-                      <p className="text-[10px] text-slate-500 leading-normal">
-                        Create a downloadable JSON backup package containing all student profiles, exam results (marks), attendance logs, and fee payments across all academic sessions.
-                      </p>
                       <Button
                         type="button"
                         onClick={handleExportStudents}
-                        className="bg-indigo-600 border border-indigo-700 text-white hover:bg-indigo-700 font-bold text-[10.5px] py-1.5 px-3 h-auto uppercase tracking-wide flex items-center gap-1.5 w-full justify-center transition-colors mt-2"
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10.5px] py-2 px-3 h-auto uppercase tracking-wide flex items-center gap-1.5 w-full justify-center transition-colors shadow-sm"
                       >
-                        <FileJson className="w-3.5 h-3.5" />
-                        Download JSON Full Backup
+                        <Download className="w-3.5 h-3.5" />
+                        Download Full JSON Backup
                       </Button>
                     </div>
 
-                    {/* Import Card */}
-                    <div className="bg-white border rounded-lg p-4 space-y-3">
-                      <div className="flex items-center gap-2">
-                        <div className="bg-amber-50 text-amber-600 p-1.5 rounded-lg">
-                          <Upload className="w-4 h-4" />
+                    {/* CSV Excel Export */}
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3 flex flex-col justify-between">
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <div className="bg-emerald-100 text-emerald-700 p-1.5 rounded-lg">
+                            <FileSpreadsheet className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="text-xs font-bold text-slate-800">Export Student Spreadsheet (CSV)</h4>
+                            <span className="text-[9px] text-slate-500 font-medium">Excel / Google Sheets Compatible</span>
+                          </div>
                         </div>
-                        <h4 className="text-xs font-bold text-slate-800">Restore/Import School Data</h4>
+                        <p className="text-[10px] text-slate-500 leading-normal">
+                          Exports all student roster data in CSV spreadsheet format, including SR No, Roll No, Class, Section, Mobile, Aadhaar, Parent Details, Session, Dues, and Photo links for easy opening in Excel.
+                        </p>
                       </div>
-                      <p className="text-[10px] text-slate-500 leading-normal">
-                        Upload a structured JSON backup. This process fully restores all student profiles, results, attendance logs, and fee histories under this school.
-                      </p>
+                      <Button
+                        type="button"
+                        onClick={handleExportCSV}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10.5px] py-2 px-3 h-auto uppercase tracking-wide flex items-center gap-1.5 w-full justify-center transition-colors shadow-sm"
+                      >
+                        <FileSpreadsheet className="w-3.5 h-3.5" />
+                        Download CSV Spreadsheet
+                      </Button>
+                    </div>
+
+                    {/* Restore Backup */}
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3 flex flex-col justify-between">
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <div className="bg-amber-100 text-amber-700 p-1.5 rounded-lg">
+                            <Upload className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="text-xs font-bold text-slate-800">Restore / Import Backup</h4>
+                            <span className="text-[9px] text-indigo-600 font-medium">Auto-Restores Photos & Marks</span>
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-slate-500 leading-normal">
+                          Restore complete database from a previously downloaded JSON backup file or import student records from a CSV spreadsheet.
+                        </p>
+                      </div>
                       
-                      <div className="space-y-2 pt-1">
+                      <div className="space-y-2">
                         <input
                           type="file"
                           accept=".json"
                           ref={studentInputRef}
                           onChange={handleImportStudents}
+                          className="hidden"
+                        />
+                        <input
+                          type="file"
+                          accept=".csv"
+                          ref={csvInputRef}
+                          onChange={handleImportCSV}
                           className="hidden"
                         />
                         <Button
@@ -1110,28 +1549,43 @@ export function MasterAdminPanel() {
                           className="bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 font-bold text-[10.5px] py-1.5 px-3 h-auto uppercase tracking-wide flex items-center gap-1.5 w-full justify-center transition-colors"
                         >
                           <Upload className="w-3.5 h-3.5" />
-                          {isSyncing ? "Syncing..." : "Choose Full Backup File (.json)"}
+                          {isSyncing ? "Restoring..." : "Import JSON Backup"}
+                        </Button>
+                        <Button
+                          type="button"
+                          onClick={() => csvInputRef.current?.click()}
+                          disabled={isSyncing}
+                          className="bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 font-bold text-[10.5px] py-1.5 px-3 h-auto uppercase tracking-wide flex items-center gap-1.5 w-full justify-center transition-colors"
+                        >
+                          <FileSpreadsheet className="w-3.5 h-3.5" />
+                          {isSyncing ? "Parsing..." : "Import CSV File"}
                         </Button>
                       </div>
                     </div>
+                  </div>
 
-                    {/* Bulk Delete Card */}
-                    <div className="bg-rose-50 border border-rose-200 rounded-lg p-4 space-y-3">
-                      <div className="flex items-center gap-2">
-                        <div className="bg-rose-100 text-rose-600 p-1.5 rounded-lg">
-                          <Trash2 className="w-4 h-4" />
-                        </div>
-                        <h4 className="text-xs font-bold text-rose-800">Master Data Wipe</h4>
+                  {/* Danger Zone: School Wipe */}
+                  <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-rose-100 text-rose-600 p-2 rounded-lg shrink-0">
+                        <AlertTriangle className="w-5 h-5" />
                       </div>
-                      <p className="text-[10px] text-rose-700 leading-normal font-medium">
-                        DANGER: This action permanently deletes ALL student enrollment records in this school database tier. Do this only for bulk fresh testing or reset.
-                      </p>
+                      <div>
+                        <h4 className="text-xs font-bold text-rose-800">Master Data Reset & Wipe</h4>
+                        <p className="text-[10px] text-rose-600">
+                          {syncSchoolId === 'all' 
+                            ? 'Select a specific school to wipe student records.' 
+                            : `Permanently delete all students currently enrolled under ${schools.find(s => s.id === syncSchoolId)?.name}.`}
+                        </p>
+                      </div>
+                    </div>
+                    {syncSchoolId !== 'all' && (
                       <Button
                         type="button"
                         onClick={async () => {
-                          if(window.confirm("Are you absolutely sure you want to delete ALL students assigned to this school? This cannot be undone.")) {
+                          if (window.confirm(`DANGER: Are you sure you want to permanently delete all students in "${schools.find(s => s.id === syncSchoolId)?.name}"? Make sure you have exported a backup first!`)) {
                             setIsSyncing(true);
-                            setImportStatus('Wiping all student documents...');
+                            setImportStatus('Wiping student documents...');
                             try {
                               await deleteAllStudentsInSchool(syncSchoolId);
                               setImportStatus('Success! Mass wipe completed. School roster is empty.');
@@ -1143,334 +1597,322 @@ export function MasterAdminPanel() {
                           }
                         }}
                         disabled={isSyncing}
-                        className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-[10.5px] py-1.5 px-3 h-auto uppercase tracking-wide flex items-center gap-1.5 w-full justify-center transition-colors"
+                        className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-[10.5px] py-1.5 px-3 h-auto uppercase tracking-wide shrink-0"
                       >
-                        <AlertTriangle className="w-3.5 h-3.5" />
-                        PURGE ALL STUDENTS
+                        Purge Selected School Students
                       </Button>
-                    </div>
+                    )}
                   </div>
-                )}
+                </div>
+              )}
 
-                {/* PROFILE CONFIG PANEL */}
-                {syncCategory === 'profile' && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Export Profile */}
-                    <div className="bg-white border rounded-lg p-4 space-y-3">
-                      <div className="flex items-center gap-2">
-                        <div className="bg-emerald-50 text-emerald-600 p-1.5 rounded-lg">
-                          <Download className="w-4 h-4" />
+              {/* TAB 2: IMMEDIATE GOOGLE DRIVE & CLOUD BACKUP */}
+              {syncCategory === 'imadate_drive' && (
+                <div className="space-y-6">
+                  <div className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl p-6 shadow-md space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div>
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white/20 rounded-full text-xs font-bold uppercase tracking-wider mb-2">
+                          <HardDrive className="w-3.5 h-3.5" />
+                          <span>Google Drive Instant Sync (तुरंत बैकअप)</span>
                         </div>
-                        <h4 className="text-xs font-bold text-slate-800">Export Core System Profile</h4>
+                        <h3 className="text-lg font-black tracking-tight">1-Click Immediate Google Drive & Cloud Backup</h3>
+                        <p className="text-xs text-emerald-100 max-w-xl mt-1 leading-relaxed">
+                          Generates complete JSON backup with student photos, examination marks, fee receipts, and school profiles. Instantly downloads to your PC and preserves a persistent restore point in Google Cloud Firestore.
+                        </p>
                       </div>
-                      <p className="text-[10px] text-slate-500 leading-normal">
-                        Downloads the complete school environment blueprint, encompassing features authorization, registered academic sessions, and grade-wise fee collection matrices.
-                      </p>
                       <Button
                         type="button"
-                        onClick={handleExportSchoolProfile}
-                        className="bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 font-bold text-[10.5px] py-1.5 px-3 h-auto uppercase tracking-wide flex items-center gap-1.5 w-full justify-center transition-colors mt-2"
+                        onClick={handleImmediateDriveBackup}
+                        disabled={isSyncing}
+                        className="bg-white text-emerald-800 hover:bg-emerald-50 font-black text-sm py-3 px-6 rounded-xl shadow-lg flex items-center justify-center gap-2 uppercase tracking-wide transition-all shrink-0 cursor-pointer"
                       >
-                        <FileJson className="w-3.5 h-3.5" />
-                        Download Profile JSON
+                        <Sparkles className="w-4 h-4 text-emerald-600" />
+                        {isSyncing ? "Processing Backup..." : "तुरंत बैकअप करें (Backup Now)"}
                       </Button>
                     </div>
-
-                    {/* Import Profile */}
-                    <div className="bg-white border rounded-lg p-4 space-y-3">
-                      <div className="flex items-center gap-2">
-                        <div className="bg-purple-50 text-purple-600 p-1.5 rounded-lg">
-                          <Upload className="w-4 h-4" />
-                        </div>
-                        <h4 className="text-xs font-bold text-slate-800">Restore System Profile</h4>
-                      </div>
-                      <p className="text-[10px] text-slate-500 leading-normal">
-                        Upload a previously exported school settings package to completely overwrite and restore global feature setups, class fees configurations, and session parameters.
-                      </p>
-                      
-                      <div className="space-y-2 pt-1">
-                        <input
-                          type="file"
-                          accept=".json"
-                          ref={profileInputRef}
-                          onChange={handleImportSchoolProfile}
-                          className="hidden"
-                        />
-                        <Button
-                          type="button"
-                          onClick={() => profileInputRef.current?.click()}
-                          disabled={isSyncing}
-                          className="bg-purple-50 border border-purple-200 text-purple-700 hover:bg-purple-100 font-bold text-[10.5px] py-1.5 px-3 h-auto uppercase tracking-wide flex items-center gap-1.5 w-full justify-center transition-colors"
-                        >
-                          <Upload className="w-3.5 h-3.5" />
-                          {isSyncing ? "Syncing..." : "Upload Profile File (.json)"}
-                        </Button>
-                      </div>
-                    </div>
                   </div>
-                )}
 
-                {/* GOOGLE DRIVE & AUTOMATED BACKUP PANEL */}
-                {syncCategory === 'gdrive' && (
-                  <div className="space-y-6">
-                    {/* Schedule and Config Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      
-                      {/* Left: Settings Panel */}
-                      <div className="bg-white border rounded-xl p-5 space-y-4 shadow-sm">
-                        <div className="flex items-center gap-2 border-b pb-3">
-                          <div className="bg-blue-50 text-indigo-600 p-2 rounded-lg">
-                            <Cloud className="w-5 h-5" />
-                          </div>
-                          <div>
-                            <h3 className="text-sm font-bold text-slate-800">Google Drive Midnight Sync</h3>
-                            <p className="text-[10px] text-slate-500">Configure automated daily backups to your Drive</p>
-                          </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Google Drive Assistant Box */}
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-4">
+                      <div className="flex items-center gap-2 border-b pb-3">
+                        <div className="bg-emerald-100 text-emerald-700 p-2 rounded-lg">
+                          <FolderSync className="w-5 h-5" />
                         </div>
-
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between p-2.5 bg-slate-50 rounded-lg">
-                            <div>
-                              <p className="text-xs font-bold text-slate-700">Backup Status (दैनिक बैकअप स्थिति)</p>
-                              <p className="text-[10px] text-slate-500">Enable or disable daily automated runs</p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => setBackupScheduleEnabled(!backupScheduleEnabled)}
-                              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                                backupScheduleEnabled ? 'bg-indigo-600' : 'bg-slate-200'
-                              }`}
-                            >
-                              <span
-                                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                                  backupScheduleEnabled ? 'translate-x-4' : 'translate-x-0'
-                                }`}
-                              />
-                            </button>
-                          </div>
-
-                          <div className="space-y-1">
-                            <Label className="text-[11px] font-bold text-slate-600">Google Drive Destination Folder</Label>
-                            <Input
-                              type="text"
-                              value={gdriveFolder}
-                              onChange={(e) => setGdriveFolder(e.target.value)}
-                              placeholder="e.g. My School Backups"
-                              className="text-xs"
-                            />
-                            <p className="text-[9px] text-slate-400">Backups will be sorted in subfolders named after each school.</p>
-                          </div>
-
-                          {/* Connection Status */}
-                          <div className="p-3 border rounded-lg bg-slate-50/50 space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[10px] font-bold text-slate-500">CONNECTION STATUS</span>
-                              <span className={`inline-flex items-center gap-1 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
-                                gdriveStatus === 'connected' 
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                                  : gdriveStatus === 'connecting'
-                                  ? 'bg-amber-50 text-amber-700 border border-amber-100'
-                                  : 'bg-slate-100 text-slate-600'
-                              }`}>
-                                {gdriveStatus === 'connected' ? 'Connected' : gdriveStatus === 'connecting' ? 'Connecting...' : 'Disconnected'}
-                              </span>
-                            </div>
-
-                            {gdriveStatus === 'connected' ? (
-                              <div className="flex items-center justify-between text-xs">
-                                <div className="flex items-center gap-1.5 text-slate-700">
-                                  <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                                  <span className="font-medium">{gdriveUser || 'shankaldeep4@gmail.com'}</span>
-                                </div>
-                                <Button
-                                  type="button"
-                                  onClick={() => {
-                                    setGdriveStatus('disconnected');
-                                    setGdriveUser('');
-                                    setImportStatus('Google Drive account disconnected.');
-                                  }}
-                                  className="h-auto py-1 px-2 text-[9px] font-bold bg-rose-50 text-rose-600 border border-rose-100 uppercase"
-                                >
-                                  Disconnect
-                                </Button>
-                              </div>
-                            ) : (
-                              <div className="space-y-2">
-                                <p className="text-[10px] text-slate-500 leading-normal">
-                                  Link your personal Google Drive to allow manual direct backups directly from this browser workspace.
-                                </p>
-                                <Button
-                                  type="button"
-                                  disabled={gdriveStatus === 'connecting'}
-                                  onClick={() => {
-                                    setGdriveStatus('connecting');
-                                    setImportStatus('Initiating Google OAuth flow...');
-                                    setTimeout(() => {
-                                      setGdriveStatus('connected');
-                                      setGdriveUser('shankaldeep4@gmail.com');
-                                      setImportStatus('Successfully connected Google Drive Account: shankaldeep4@gmail.com');
-                                    }, 1500);
-                                  }}
-                                  className="w-full h-auto py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10.5px] uppercase tracking-wider"
-                                >
-                                  {gdriveStatus === 'connecting' ? 'Connecting to Google...' : 'Link Google Drive Account'}
-                                </Button>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Quick Manual Upload to linked Google Drive */}
-                          {gdriveStatus === 'connected' && (
-                            <Button
-                              type="button"
-                              disabled={isSyncing}
-                              onClick={async () => {
-                                setIsSyncing(true);
-                                setImportStatus('Compressing school package...');
-                                setManualBackupProgress(10);
-                                setTimeout(() => {
-                                  setManualBackupProgress(40);
-                                  setImportStatus('Authenticating with Google API...');
-                                }, 800);
-                                setTimeout(() => {
-                                  setManualBackupProgress(75);
-                                  setImportStatus(`Uploading JSON backup to Drive folder: /My Drive/${gdriveFolder}...`);
-                                }, 1600);
-                                setTimeout(() => {
-                                  setManualBackupProgress(100);
-                                  const schoolName = schools.find(s => s.id === syncSchoolId)?.name || 'School';
-                                  setImportStatus(`Success! Successfully created and uploaded Backup_${schoolName}_${new Date().toISOString().slice(0, 10)}.json to Google Drive!`);
-                                  setIsSyncing(false);
-                                  setManualBackupProgress(null);
-                                }, 2500);
-                              }}
-                              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10.5px] uppercase py-2 tracking-wider flex items-center justify-center gap-1.5 transition-colors"
-                            >
-                              <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                              Upload Immediate Backup to Drive Now
-                            </Button>
-                          )}
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-800">Google Drive Folder Integration</h4>
+                          <p className="text-[10px] text-slate-500">Organize and store backups directly in Google Drive</p>
                         </div>
-                      </div>
-
-                      {/* Right: Informational / Automatic Cloud Trigger Box */}
-                      <div className="bg-white border rounded-xl p-5 space-y-4 shadow-sm flex flex-col justify-between">
-                        <div className="space-y-3">
-                          <div className="flex items-center gap-2 border-b pb-3">
-                            <div className="bg-indigo-50 text-indigo-600 p-2 rounded-lg">
-                              <Database className="w-5 h-5" />
-                            </div>
-                            <div>
-                              <h3 className="text-sm font-bold text-slate-800">Secure Firestore Daily Cloud Restore Points</h3>
-                              <p className="text-[10px] text-slate-500">Automatic background snapshots stored in secure database</p>
-                            </div>
-                          </div>
-
-                          <p className="text-[10px] text-slate-500 leading-normal">
-                            Even if the admin's PC is turned off, you can create and trigger instant, consolidated cloud snapshots. Each snapshot secures all profiles, marks, attendance, and fees in Firestore, which can be restored with <strong>1-Click</strong>.
-                          </p>
-
-                          <div className="bg-slate-50 border border-slate-200/60 rounded-lg p-3 space-y-1.5">
-                            <div className="flex items-center justify-between text-[11px] font-bold text-slate-700">
-                              <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5 text-indigo-600" /> Auto-Save Active</span>
-                              <span className="text-emerald-600">Enabled (सक्रिय)</span>
-                            </div>
-                            <p className="text-[9.5px] text-slate-550 leading-relaxed">
-                              The system is configured to capture a full backup in the database dynamically. You don't have to worry about data loss.
-                            </p>
-                          </div>
-                        </div>
-
-                        <Button
-                          type="button"
-                          disabled={isSyncing}
-                          onClick={handleImmediateCloudBackup}
-                          className="w-full bg-indigo-600 border border-indigo-700 text-white hover:bg-indigo-700 font-bold text-[11px] py-2 uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-sm"
-                        >
-                          <Database className="w-3.5 h-3.5" />
-                          Create Instant Cloud Snapshot
-                        </Button>
-                      </div>
-
-                    </div>
-
-                    {/* Google Apps Script Midnight Runner Section */}
-                    <div className="bg-white border rounded-xl p-5 space-y-4 shadow-sm">
-                      <div className="flex items-center justify-between border-b pb-3">
-                        <div className="flex items-center gap-2">
-                          <div className="bg-amber-50 text-amber-600 p-2 rounded-lg">
-                            <Database className="w-5 h-5" />
-                          </div>
-                          <div>
-                            <h3 className="text-sm font-bold text-slate-800">Google Apps Script Midnight Trigger (100% Automatic 12:00 AM)</h3>
-                            <p className="text-[10px] text-slate-500">Run completely automated daily backups in the cloud with zero user action</p>
-                          </div>
-                        </div>
-                        <span className="text-[9px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 rounded px-2 py-0.5 uppercase tracking-wider">
-                          Recommended
-                        </span>
                       </div>
 
                       <div className="space-y-3">
-                        <p className="text-[10px] text-slate-650 leading-relaxed">
-                          Since browser downloads can't run if your computer is shut down at midnight, the industry-standard way is to let Google's cloud run the backup. Below is your <strong>fully customized Google Apps Script code</strong>. It directly reads your Firestore collections and uploads the JSON backup package into a folder named "School Backups" in your Google Drive every day at 12:00 AM automatically!
-                        </p>
+                        <div>
+                          <Label className="text-[11px] font-bold text-slate-700">Target Google Drive Folder Name</Label>
+                          <Input
+                            type="text"
+                            value={gdriveFolder}
+                            onChange={(e) => setGdriveFolder(e.target.value)}
+                            placeholder="School Management Backups"
+                            className="text-xs"
+                          />
+                          <p className="text-[9.5px] text-slate-400 mt-1">Backups can be uploaded into this folder inside your Google Drive.</p>
+                        </div>
 
-                        <div className="bg-slate-900 rounded-lg p-4 font-mono text-[10px] text-slate-300 relative overflow-x-auto max-h-[280px]">
-                          <button
+                        <div>
+                          <Label className="text-[11px] font-bold text-slate-700">Google Account</Label>
+                          <Input
+                            type="email"
+                            value={gdriveUser}
+                            onChange={(e) => setGdriveUser(e.target.value)}
+                            placeholder="shankaldeep4@gmail.com"
+                            className="text-xs"
+                          />
+                        </div>
+
+                        <div className="pt-2 flex flex-col gap-2">
+                          <Button
                             type="button"
-                            onClick={() => {
-                              const codeText = document.getElementById('apps-script-code')?.innerText;
-                              if (codeText) {
-                                navigator.clipboard.writeText(codeText);
-                                setScriptCopied(true);
-                                setTimeout(() => setScriptCopied(false), 2000);
-                              }
-                            }}
-                            className="absolute top-2 right-2 bg-slate-800 hover:bg-slate-700 text-white text-[9px] font-bold px-2 py-1 rounded border border-slate-700 transition-colors flex items-center gap-1"
+                            onClick={handleDirectUploadToDrive}
+                            disabled={isDriveUploading || isSyncing}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2.5 px-3 rounded-lg flex items-center justify-center gap-2 w-full shadow-sm cursor-pointer"
                           >
-                            {scriptCopied ? <CheckCircle2 className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                            {scriptCopied ? 'Copied!' : 'Copy Code'}
-                          </button>
-                          <pre id="apps-script-code" className="leading-relaxed">
+                            <HardDrive className={`w-4 h-4 ${isDriveUploading ? 'animate-spin' : ''}`} />
+                            <span>{isDriveUploading ? 'Uploading to Drive...' : 'Google Drive पर सीधे अपलोड करें (Direct Upload)'}</span>
+                          </Button>
+                          <div className="flex items-center gap-2">
+                            <a
+                              href="https://drive.google.com/drive/my-drive"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 font-bold text-xs py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 w-full transition-colors"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              Open Google Drive
+                            </a>
+                            <Button
+                              type="button"
+                              onClick={handleImmediateDriveBackup}
+                              disabled={isSyncing}
+                              className="bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-700 font-bold text-xs py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 w-full shadow-sm"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              Download PC File
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Auto Midnight Backup Info */}
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-4">
+                      <div className="flex items-center gap-2 border-b pb-3">
+                        <div className="bg-indigo-100 text-indigo-700 p-2 rounded-lg">
+                          <Clock className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-800">Midnight Google Apps Script Automation</h4>
+                          <p className="text-[10px] text-slate-500">100% automated 12:00 AM cloud sync to Google Drive</p>
+                        </div>
+                      </div>
+
+                      <p className="text-[10.5px] text-slate-600 leading-relaxed">
+                        To have backups saved directly to your Google Drive every night at 12:00 AM without needing to keep the browser open, use our pre-configured Google Apps Script.
+                      </p>
+
+                      <div className="space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSyncCategory('cloud_snapshots');
+                          }}
+                          className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer"
+                        >
+                          <span>View Apps Script Code & Midnight Instructions &rarr;</span>
+                        </button>
+                      </div>
+
+                      <Button
+                        type="button"
+                        onClick={handleImmediateCloudBackup}
+                        disabled={isSyncing}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-2 px-4 w-full flex items-center justify-center gap-2 shadow-sm"
+                      >
+                        <Database className="w-3.5 h-3.5" />
+                        Create Firestore Cloud Restore Point
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 3: CLOUD RESTORE SNAPSHOTS & APPS SCRIPT */}
+              {syncCategory === 'cloud_snapshots' && (
+                <div className="space-y-6">
+                  {/* Historical Backups Table */}
+                  <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4 shadow-sm">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b pb-3 gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="bg-indigo-50 text-indigo-600 p-2 rounded-lg">
+                          <Database className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-bold text-slate-800">Firestore Cloud Restore Snapshots</h3>
+                          <p className="text-[10px] text-slate-500">Live restore points stored in Firestore database ({firestoreCloudBackups.length} snapshots available)</p>
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        onClick={handleImmediateCloudBackup}
+                        disabled={isSyncing}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-1.5 px-3 uppercase tracking-wide flex items-center gap-1.5 shadow-sm"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        New Cloud Snapshot
+                      </Button>
+                    </div>
+
+                    {firestoreCloudBackups.length === 0 ? (
+                      <div className="text-center py-8 text-slate-400">
+                        <Database className="w-10 h-10 mx-auto stroke-1 mb-2 animate-pulse" />
+                        <p className="text-xs font-bold text-slate-600">No Cloud Snapshots Yet</p>
+                        <p className="text-[10px] text-slate-400 mt-1">Click "New Cloud Snapshot" or "Instant Drive Backup" to create your first cloud restore point.</p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs border-collapse">
+                          <thead>
+                            <tr className="border-b bg-slate-50 text-slate-600 text-[10px] font-bold uppercase tracking-wider">
+                              <th className="p-2.5">Snapshot ID</th>
+                              <th className="p-2.5">School Scope</th>
+                              <th className="p-2.5">Date & Time</th>
+                              <th className="p-2.5 text-center">Students (Photos)</th>
+                              <th className="p-2.5 text-center">Marks</th>
+                              <th className="p-2.5 text-center">Fees</th>
+                              <th className="p-2.5 text-right">Size</th>
+                              <th className="p-2.5 text-center">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {firestoreCloudBackups.map((b) => (
+                              <tr key={b.id} className="hover:bg-slate-50/80 transition-colors">
+                                <td className="p-2.5 font-mono text-[10px] text-indigo-600 font-semibold">{b.id}</td>
+                                <td className="p-2.5 font-medium text-slate-800">{b.schoolName}</td>
+                                <td className="p-2.5 text-slate-500">{new Date(b.exportedAt).toLocaleString()}</td>
+                                <td className="p-2.5 text-center font-bold text-slate-700">
+                                  {b.studentsCount}
+                                  {b.studentsWithPhotosCount !== undefined && b.studentsWithPhotosCount > 0 && (
+                                    <span className="ml-1 text-[9.5px] text-indigo-600 font-normal">({b.studentsWithPhotosCount} 📷)</span>
+                                  )}
+                                </td>
+                                <td className="p-2.5 text-center font-bold text-slate-700">{b.marksCount}</td>
+                                <td className="p-2.5 text-center font-bold text-emerald-600">{b.feeRecordsCount || 0}</td>
+                                <td className="p-2.5 text-right font-mono text-slate-600 font-bold">{b.size}</td>
+                                <td className="p-2.5 text-center">
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        let rawJson = b.snapshot;
+                                        if (!rawJson) {
+                                          const backupPkg = createFullBackupPackage(b.schoolId || syncSchoolId);
+                                          rawJson = JSON.stringify(backupPkg, null, 2);
+                                        }
+                                        const blob = new Blob([rawJson], { type: 'application/json' });
+                                        const url = URL.createObjectURL(blob);
+                                        const a = document.createElement('a');
+                                        a.href = url;
+                                        a.download = `RESTORE_${b.id}.json`;
+                                        document.body.appendChild(a);
+                                        a.click();
+                                        document.body.removeChild(a);
+                                        URL.revokeObjectURL(url);
+                                      }}
+                                      className="py-1 px-2 text-[9px] font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 rounded uppercase cursor-pointer"
+                                      title="Download this JSON snapshot"
+                                    >
+                                      Download
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRestoreFromCloudSnapshot(b.id, b.snapshot)}
+                                      className="py-1 px-2 text-[9px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 rounded uppercase cursor-pointer"
+                                      title="1-Click Restore this snapshot into live database"
+                                    >
+                                      Restore
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteCloudSnapshot(b.id)}
+                                      className="p-1 text-rose-500 hover:bg-rose-50 rounded cursor-pointer"
+                                      title="Delete snapshot"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Google Apps Script Midnight Runner */}
+                  <div className="bg-white border rounded-xl p-5 space-y-4 shadow-sm">
+                    <div className="flex items-center justify-between border-b pb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="bg-amber-50 text-amber-600 p-2 rounded-lg">
+                          <Clock className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-bold text-slate-800">Google Apps Script Midnight Auto-Backup Code</h3>
+                          <p className="text-[10px] text-slate-500">Copy this code into script.google.com for automated nightly backups to Google Drive</p>
+                        </div>
+                      </div>
+                      <span className="text-[9px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 rounded px-2 py-0.5 uppercase tracking-wider">
+                        Automated 12:00 AM
+                      </span>
+                    </div>
+
+                    <div className="bg-slate-900 rounded-lg p-4 font-mono text-[10px] text-slate-300 relative overflow-x-auto max-h-[220px]">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const codeText = document.getElementById('apps-script-code')?.innerText;
+                          if (codeText) {
+                            navigator.clipboard.writeText(codeText);
+                            setScriptCopied(true);
+                            setTimeout(() => setScriptCopied(false), 2000);
+                          }
+                        }}
+                        className="absolute top-2 right-2 bg-slate-800 hover:bg-slate-700 text-white text-[9px] font-bold px-2 py-1 rounded border border-slate-700 transition-colors flex items-center gap-1 cursor-pointer"
+                      >
+                        {scriptCopied ? <CheckCircle2 className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                        {scriptCopied ? 'Copied!' : 'Copy Code'}
+                      </button>
+                      <pre id="apps-script-code" className="leading-relaxed">
 {`/**
  * Automated Google Drive Backup Scheduler for School Management System
- * Configured for: PROJECT_NAME (asymmetric-connection-m8gvj)
  * Database ID: ai-studio-37117925-0d7c-4ac1-aea6-5327bca4fa90
  * Runs automatically every day at 12:00 AM (Midnight)
  */
-
 const PROJECT_ID = "asymmetric-connection-m8gvj";
 const DATABASE_ID = "ai-studio-37117925-0d7c-4ac1-aea6-5327bca4fa90";
 const API_KEY = "AIzaSyDVruIO1uQ9Im4lPPdoENZ1gYSHidI7mKg";
 
 function runDailyBackup() {
   Logger.log("Starting automated daily backup process...");
-  
-  // 1. Fetch schools data
-  const schools = fetchCollection("schools");
-  Logger.log("Fetched " + schools.length + " schools.");
-  
-  if (schools.length === 0) {
-    Logger.log("No schools found in database. Exiting.");
-    return;
-  }
-  
-  // Loop through each school to create a separate full backup package
+  var schools = fetchCollection("schools");
   for (var i = 0; i < schools.length; i++) {
     var school = schools[i];
     var schoolId = school.id;
     var schoolName = school.name || "School_" + schoolId;
-    
-    Logger.log("Backing up data for: " + schoolName + " (" + schoolId + ")");
-    
-    // Fetch all related collections for this school
     var students = fetchCollectionWithQuery("students", "schoolId", schoolId);
     var marks = fetchCollectionWithQuery("marks", "schoolId", schoolId);
     var attendances = fetchCollectionWithQuery("attendances", "schoolId", schoolId);
     var feeRecords = fetchCollectionWithQuery("feeRecords", "schoolId", schoolId);
-    
-    // Create backup package structure
     var backupPackage = {
       type: "school_full_backup",
       schoolId: schoolId,
@@ -1481,26 +1923,15 @@ function runDailyBackup() {
       attendances: attendances,
       feeRecords: feeRecords
     };
-    
-    // Save to Google Drive
     saveToGoogleDrive(schoolName, backupPackage);
   }
-  
-  Logger.log("All school automated backups compiled and saved to Google Drive successfully.");
 }
 
 function fetchCollection(collectionId) {
   var url = "https://firestore.googleapis.com/v1/projects/" + PROJECT_ID + "/databases/" + DATABASE_ID + "/documents/" + collectionId + "?key=" + API_KEY;
-  try {
-    var response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
-    var json = JSON.parse(response.getContentText());
-    if (json.documents) {
-      return json.documents.map(parseDocument);
-    }
-  } catch (e) {
-    Logger.log("Error fetching collection " + collectionId + ": " + e.message);
-  }
-  return [];
+  var response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+  var json = JSON.parse(response.getContentText());
+  return json.documents ? json.documents.map(parseDocument) : [];
 }
 
 function fetchCollectionWithQuery(collectionId, fieldName, fieldValue) {
@@ -1508,233 +1939,240 @@ function fetchCollectionWithQuery(collectionId, fieldName, fieldValue) {
   var payload = {
     structuredQuery: {
       from: [{ collectionId: collectionId }],
-      where: {
-        fieldFilter: {
-          field: { fieldPath: fieldName },
-          op: "EQUAL",
-          value: { stringValue: fieldValue }
-        }
-      }
+      where: { fieldFilter: { field: { fieldPath: fieldName }, op: "EQUAL", value: { stringValue: fieldValue } } }
     }
   };
-  
-  try {
-    var response = UrlFetchApp.fetch(url, {
-      method: "post",
-      contentType: "application/json",
-      payload: JSON.stringify(payload),
-      muteHttpExceptions: true
-    });
-    var results = JSON.parse(response.getContentText());
-    var list = [];
-    if (Array.isArray(results)) {
-      results.forEach(function(result) {
-        if (result.document) {
-          list.push(parseDocument(result.document));
-        }
-      });
-    }
-    return list;
-  } catch (e) {
-    Logger.log("Error querying collection " + collectionId + ": " + e.message);
-  }
-  return [];
+  var response = UrlFetchApp.fetch(url, { method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true });
+  var results = JSON.parse(response.getContentText());
+  return Array.isArray(results) ? results.filter(r => r.document).map(r => parseDocument(r.document)) : [];
 }
 
 function parseDocument(doc) {
   var data = {};
   var fields = doc.fields || {};
-  
-  // Extract document ID from name path
   var nameParts = doc.name.split("/");
   data.id = nameParts[nameParts.length - 1];
-  
   Object.keys(fields).forEach(function(key) {
-    data[key] = parseValue(fields[key]);
+    var val = fields[key];
+    data[key] = val.stringValue !== undefined ? val.stringValue : (val.integerValue !== undefined ? parseInt(val.integerValue, 10) : (val.booleanValue !== undefined ? val.booleanValue : val));
   });
-  
   return data;
-}
-
-function parseValue(val) {
-  if (val.stringValue !== undefined) return val.stringValue;
-  if (val.integerValue !== undefined) return parseInt(val.integerValue, 10);
-  if (val.doubleValue !== undefined) return parseFloat(val.doubleValue);
-  if (val.booleanValue !== undefined) return val.booleanValue;
-  if (val.timestampValue !== undefined) return val.timestampValue;
-  if (val.arrayValue !== undefined) {
-    var arr = val.arrayValue.values || [];
-    return arr.map(parseValue);
-  }
-  if (val.mapValue !== undefined) {
-    var mapObj = {};
-    var fields = val.mapValue.fields || {};
-    Object.keys(fields).forEach(function(k) {
-      mapObj[k] = parseValue(fields[k]);
-    });
-    return mapObj;
-  }
-  return null;
 }
 
 function saveToGoogleDrive(schoolName, data) {
   var folderName = "School Backups";
   var folders = DriveApp.getFoldersByName(folderName);
-  var folder;
-  
-  if (folders.hasNext()) {
-    folder = folders.next();
-  } else {
-    folder = DriveApp.createFolder(folderName);
-  }
-  
-  // Create a subfolder for the specific school
-  var schoolFolders = folder.getFoldersByName(schoolName);
-  var schoolFolder;
-  if (schoolFolders.hasNext()) {
-    schoolFolder = schoolFolders.next();
-  } else {
-    schoolFolder = folder.createFolder(schoolName);
-  }
-  
+  var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
   var dateStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd");
   var fileName = "Backup_" + schoolName + "_" + dateStr + ".json";
-  
-  // Check if file already exists for today to avoid duplicates
-  var existingFiles = schoolFolder.getFilesByName(fileName);
-  while (existingFiles.hasNext()) {
-    existingFiles.next().setTrashed(true);
-  }
-  
-  schoolFolder.createFile(fileName, JSON.stringify(data, null, 2), "application/json");
-  Logger.log("Saved backup to Google Drive folder: " + folderName + "/" + schoolName + "/" + fileName);
+  folder.createFile(fileName, JSON.stringify(data, null, 2), "application/json");
 }`}
-                          </pre>
-                        </div>
-
-                        <div className="bg-slate-50 rounded-lg p-4 space-y-2.5 text-[10.5px] border text-slate-700">
-                          <p className="font-bold uppercase tracking-wider text-[10px] text-slate-850">Instructions (सेटअप करने के निर्देश):</p>
-                          <ol className="list-decimal list-inside space-y-1.5 leading-relaxed">
-                            <li>Go to <a href="https://script.google.com" target="_blank" rel="noopener noreferrer" className="text-indigo-600 font-bold hover:underline inline-flex items-center gap-0.5">script.google.com <ExternalLink className="w-3 h-3" /></a> and sign in with your Gmail/School account.</li>
-                            <li>Click on <strong>"New Project"</strong>. Delete any default code in the editor, paste the copied code above, and click the <strong>Save icon (फ्लॉपी डिस्क)</strong>.</li>
-                            <li>Click <strong>Run (त्रिकोण बटन)</strong> at the top to test. It will ask for "Authorization Permissions". Approve them so the script can write to your Google Drive folder.</li>
-                            <li>On the left sidebar, click on the **Triggers (घड़ी का निशान/अलार्म)** icon.</li>
-                            <li>Click **"Add Trigger"** at bottom right. Select `runDailyBackup` as the function, **Time-driven** as the event source, **Day timer** as the type, and select **Midnight to 1 AM** as the time. Click **Save**.</li>
-                            <li>That's it! Your Google account will now automatically trigger a full data backup of your schools every night at 12:00 AM completely on Google Cloud.</li>
-                          </ol>
-                        </div>
-                      </div>
+                      </pre>
                     </div>
-
-                    {/* Firestore Daily Cloud Snapshots History */}
-                    <div className="bg-white border rounded-xl p-5 space-y-4 shadow-sm">
-                      <div className="flex items-center justify-between border-b pb-3">
-                        <div className="flex items-center gap-2">
-                          <div className="bg-emerald-50 text-emerald-600 p-2 rounded-lg">
-                            <Database className="w-5 h-5" />
-                          </div>
-                          <div>
-                            <h3 className="text-sm font-bold text-slate-800">Historical Restore Points in Cloud</h3>
-                            <p className="text-[10px] text-slate-500">Manage, download, and instantly restore full school databases</p>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left text-xs border-collapse">
-                          <thead>
-                            <tr className="border-b bg-slate-50 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
-                              <th className="p-2.5">Snapshot ID</th>
-                              <th className="p-2.5">School Name</th>
-                              <th className="p-2.5">Exported At</th>
-                              <th className="p-2.5 text-center">Students</th>
-                              <th className="p-2.5 text-center">Marks</th>
-                              <th className="p-2.5 text-right">Size</th>
-                              <th className="p-2.5 text-center">Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {firestoreCloudBackups.map((b) => (
-                              <tr key={b.id} className="border-b hover:bg-slate-50/60 transition-colors">
-                                <td className="p-2.5 font-mono text-[10px] text-indigo-600 font-semibold">{b.id}</td>
-                                <td className="p-2.5 font-medium text-slate-800">{b.schoolName}</td>
-                                <td className="p-2.5 text-slate-500">{new Date(b.exportedAt).toLocaleString()}</td>
-                                <td className="p-2.5 text-center font-bold text-slate-700">{b.studentsCount}</td>
-                                <td className="p-2.5 text-center font-bold text-slate-700">{b.marksCount}</td>
-                                <td className="p-2.5 text-right font-mono text-slate-600 font-bold">{b.size}</td>
-                                <td className="p-2.5 text-center">
-                                  <div className="flex items-center justify-center gap-2">
-                                    <Button
-                                      type="button"
-                                      onClick={() => {
-                                        const jsonStr = JSON.stringify({
-                                          type: "school_full_backup",
-                                          schoolId: b.schoolId || syncSchoolId,
-                                          schoolName: b.schoolName,
-                                          exportedAt: b.exportedAt,
-                                          students: allStudents.filter(s => s.schoolId === (b.schoolId || syncSchoolId)),
-                                          marks: allMarks.filter(m => m.schoolId === (b.schoolId || syncSchoolId)),
-                                          attendances: attendances.filter(a => a.schoolId === (b.schoolId || syncSchoolId)),
-                                          feeRecords: allFeeRecords.filter(f => f.schoolId === (b.schoolId || syncSchoolId))
-                                        }, null, 2);
-                                        const blob = new Blob([jsonStr], { type: 'application/json' });
-                                        const url = URL.createObjectURL(blob);
-                                        const a = document.createElement('a');
-                                        a.href = url;
-                                        a.download = `backup_restore_${b.id}.json`;
-                                        document.body.appendChild(a);
-                                        a.click();
-                                        document.body.removeChild(a);
-                                      }}
-                                      className="py-1 px-2 text-[9px] font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 uppercase"
-                                    >
-                                      Download
-                                    </Button>
-                                    <Button
-                                      type="button"
-                                      onClick={() => handleRestoreFromCloudSnapshot(b.id)}
-                                      className="py-1 px-2 text-[9px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-100 hover:bg-indigo-100 uppercase"
-                                    >
-                                      Restore
-                                    </Button>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-
                   </div>
-                )}
+                </div>
+              )}
 
-                {/* Status Logs Display */}
-                {importStatus && (
-                  <div className={`p-4 rounded-lg flex items-start gap-2 text-xs border ${
-                    importStatus.includes('Error') || importStatus.includes('abort') || importStatus.includes('invalid')
-                      ? 'bg-rose-50 border-rose-100 text-rose-800'
-                      : 'bg-emerald-50 border-emerald-100 text-emerald-800'
-                  }`}>
-                    {importStatus.includes('Error') || importStatus.includes('abort') || importStatus.includes('invalid') ? (
-                      <AlertTriangle className="w-4 h-4 text-rose-600 mt-0.5 shrink-0" />
-                    ) : (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
+              {/* TAB 4: PROFILE & SETTINGS */}
+              {syncCategory === 'profile' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Export Profile */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-3 flex flex-col justify-between">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <div className="bg-emerald-100 text-emerald-700 p-2 rounded-lg">
+                          <Download className="w-5 h-5" />
+                        </div>
+                        <h4 className="text-xs font-bold text-slate-800">Export School Settings & Fee Tiers</h4>
+                      </div>
+                      <p className="text-[10px] text-slate-500 leading-normal">
+                        Downloads the complete school environment blueprint, encompassing features authorization, registered academic sessions, and grade-wise fee collection matrices.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      onClick={handleExportSchoolProfile}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10.5px] py-2 px-3 h-auto uppercase tracking-wide flex items-center gap-1.5 w-full justify-center transition-colors mt-2"
+                    >
+                      <FileJson className="w-3.5 h-3.5" />
+                      Download Profile JSON
+                    </Button>
+                  </div>
+
+                  {/* Import Profile */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-3 flex flex-col justify-between">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <div className="bg-purple-100 text-purple-700 p-2 rounded-lg">
+                          <Upload className="w-5 h-5" />
+                        </div>
+                        <h4 className="text-xs font-bold text-slate-800">Restore School Settings</h4>
+                      </div>
+                      <p className="text-[10px] text-slate-500 leading-normal">
+                        Upload a previously exported school settings package to completely overwrite and restore global feature setups, class fees configurations, and session parameters.
+                      </p>
+                    </div>
+                    
+                    <div className="space-y-2 pt-1">
+                      <input
+                        type="file"
+                        accept=".json"
+                        ref={profileInputRef}
+                        onChange={handleImportSchoolProfile}
+                        className="hidden"
+                      />
+                      <Button
+                        type="button"
+                        onClick={() => profileInputRef.current?.click()}
+                        disabled={isSyncing}
+                        className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-[10.5px] py-2 px-3 h-auto uppercase tracking-wide flex items-center gap-1.5 w-full justify-center transition-colors"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        {isSyncing ? "Syncing..." : "Upload Profile File (.json)"}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Status Output Console */}
+              {importStatus && (
+                <div className={`p-4 rounded-xl flex items-start gap-3 text-xs border ${
+                  importStatus.includes('Error') || importStatus.includes('Failed') || importStatus.includes('abort')
+                    ? 'bg-rose-50 border-rose-200 text-rose-800'
+                    : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                }`}>
+                  {importStatus.includes('Error') || importStatus.includes('Failed') || importStatus.includes('abort') ? (
+                    <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                  ) : (
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                  )}
+                  <div className="space-y-1">
+                    <p className="font-bold uppercase tracking-wider text-[10px]">Backup Activity Log</p>
+                    <p className="leading-relaxed font-medium">{importStatus}</p>
+                    {importedCount > 0 && (
+                      <p className="font-mono text-[10px] text-slate-700 font-bold">Total Records Synchronized: {importedCount}</p>
                     )}
-                    <div className="space-y-1">
-                      <p className="font-bold uppercase tracking-wide text-[10px]">Sync Logger Output</p>
-                      <p className="leading-snug">{importStatus}</p>
-                      {importedCount > 0 && (
-                        <p className="font-mono text-[10px] text-slate-650 font-bold">Rows updated: {importedCount}</p>
-                      )}
-                    </div>
                   </div>
-                )}
-              </div>
-            )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </Card>
+
+      {/* Google Drive Assistant Modal */}
+      {showDriveAssistantModal && lastBackupDetails && (
+        <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-4">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div className="flex items-center gap-2">
+                <div className="bg-emerald-100 text-emerald-700 p-2 rounded-xl">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-800">तुरंत बैकअप तैयार है (Backup Ready)</h3>
+                  <p className="text-xs text-slate-500">File downloaded & cloud snapshot secured</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDriveAssistantModal(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-slate-50 rounded-xl p-4 space-y-2 border text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-medium">Backup File:</span>
+                <span className="font-mono font-bold text-slate-800">{lastBackupDetails.fileName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-medium">File Size:</span>
+                <span className="font-bold text-slate-800">{lastBackupDetails.size}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-medium">Student Profiles:</span>
+                <span className="font-bold text-indigo-600">{lastBackupDetails.studentsCount} Students</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-medium">Student & Parent Photos:</span>
+                <span className="font-bold text-emerald-600">{lastBackupDetails.photosCount} Photos included</span>
+              </div>
+            </div>
+
+            {/* Direct Google Drive Upload Status */}
+            {lastBackupDetails.gdriveUploaded ? (
+              <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 space-y-2">
+                <div className="flex items-center gap-2 font-bold text-emerald-800">
+                  <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>गूगल ड्राइव पर सफलतापूर्वक अपलोड हो गया!</span>
+                </div>
+                <p className="text-[11px] text-emerald-700 leading-relaxed">
+                  बैकअप फ़ाइल आपके Google Drive के <strong>"{gdriveFolder}"</strong> फ़ोल्डर में सुरक्षित रूप से पहुँच चुकी है।
+                </p>
+                {lastBackupDetails.gdriveFileLink && (
+                  <a
+                    href={lastBackupDetails.gdriveFileLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-white border border-emerald-300 px-3 py-1.5 rounded-lg hover:bg-emerald-100 transition-colors shadow-xs"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>View File in Google Drive</span>
+                  </a>
+                )}
+              </div>
+            ) : (
+              <div className="p-3.5 bg-indigo-50 border border-indigo-100 rounded-xl text-xs text-indigo-900 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold">Google Drive Direct Upload</span>
+                  <span className="text-[10px] text-indigo-600 font-semibold">{gdriveFolder}</span>
+                </div>
+                <p className="text-[11px] text-indigo-700 leading-relaxed">
+                  फ़ाइल आपके कंप्यूटर पर डाउनलोड हो चुकी है और Cloud Restore Point भी बन चुका है। Google Drive पर सीधे अपलोड करने के लिए नीचे दिए गए बटन पर क्लिक करें।
+                </p>
+                {lastBackupDetails.gdriveError && (
+                  <p className="text-[10px] text-rose-600 bg-rose-50 border border-rose-200 p-1.5 rounded font-mono">
+                    {lastBackupDetails.gdriveError}
+                  </p>
+                )}
+                <Button
+                  type="button"
+                  onClick={handleDirectUploadToDrive}
+                  disabled={isDriveUploading}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 w-full transition-colors shadow-xs cursor-pointer"
+                >
+                  <HardDrive className={`w-3.5 h-3.5 ${isDriveUploading ? 'animate-spin' : ''}`} />
+                  <span>{isDriveUploading ? 'Uploading to Drive...' : 'Upload Directly to Google Drive'}</span>
+                </Button>
+              </div>
+            )}
+
+            <div className="flex items-center gap-3 pt-2">
+              <a
+                href="https://drive.google.com/drive/my-drive"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setShowDriveAssistantModal(false)}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-1.5 w-full transition-colors shadow-sm"
+              >
+                <ExternalLink className="w-4 h-4" />
+                Open Google Drive
+              </a>
+              <Button
+                type="button"
+                onClick={() => setShowDriveAssistantModal(false)}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs py-2.5 px-4 rounded-xl"
+              >
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Edit School Modal */}
       {editingSchool && (

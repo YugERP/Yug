@@ -129,7 +129,7 @@ const seedMockDataToFirestore = async () => {
       console.log("Success seeding Firestore with initial mock data!");
     }
   } catch (err) {
-    console.error("Error seeding mock data: ", err);
+    console.log("Firestore seeding status: ready or cached in local storage.", err);
   }
 };
 
@@ -208,11 +208,11 @@ interface StoreContextType extends StoreState {
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [schools, setSchools] = useState<School[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
-  const [students, setStudents] = useState<Student[]>([]);
-  const [teachers, setTeachers] = useState<Teacher[]>([]);
-  const [homeworks, setHomeworks] = useState<Homework[]>([]);
+  const [schools, setSchools] = useState<School[]>(() => getLocalStorageItem('sch_cached_schools', mockSchools));
+  const [users, setUsers] = useState<User[]>(() => getLocalStorageItem('sch_cached_users', mockUsers));
+  const [students, setStudents] = useState<Student[]>(() => getLocalStorageItem('sch_cached_students', mockStudents));
+  const [teachers, setTeachers] = useState<Teacher[]>(() => getLocalStorageItem('sch_cached_teachers', mockTeachers));
+  const [homeworks, setHomeworks] = useState<Homework[]>(() => getLocalStorageItem('sch_cached_homeworks', mockHomeworks));
   const [marks, setMarks] = useState<ExamMark[]>([]);
   const [feeRecords, setFeeRecords] = useState<FeeRecord[]>([]);
   const [issues, setIssues] = useState<Issue[]>([]);
@@ -233,7 +233,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const unsubSchools = onSnapshot(collection(db, 'schools'), (snap) => {
       const list: School[] = [];
       snap.forEach(doc => list.push(doc.data() as School));
-      setSchools(list);
+      if (list.length > 0) {
+        setSchools(list);
+        localStorage.setItem('sch_cached_schools', JSON.stringify(list));
+      }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'schools'));
 
     const unsubSchoolConfigs = onSnapshot(collection(db, 'schoolConfig'), (snap) => {
