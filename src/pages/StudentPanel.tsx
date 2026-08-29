@@ -112,17 +112,32 @@ export function StudentPanel() {
             <div className="overflow-x-auto border border-slate-200 rounded">
               <table className="w-full text-left text-[12px] text-slate-600 border-collapse">
                 <thead className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase text-slate-400 font-bold">
-                  <tr><th className="px-4 py-2">Exam Type</th><th className="px-4 py-2">Subject</th><th className="px-4 py-2 text-indigo-600">Marks Obtained</th><th className="px-4 py-2">Maximum Marks</th><th className="px-4 py-2">Percentage</th></tr>
+                  <tr>
+                    <th className="px-4 py-2">Exam Type</th>
+                    <th className="px-4 py-2">Subject</th>
+                    <th className="px-4 py-2 text-indigo-600">Theory</th>
+                    <th className="px-4 py-2 text-indigo-600">Practical</th>
+                    <th className="px-4 py-2 text-slate-900 font-black">Total Score</th>
+                    <th className="px-4 py-2">Percentage</th>
+                  </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {myMarks.map(m => {
-                    const percent = ((m.marksObtained / m.maxMarks) * 100).toFixed(1);
+                    const hasPrac = m.practicalMarks !== undefined && m.practicalMarks !== null;
+                    const totalObt = (m.marksObtained || 0) + (hasPrac ? (m.practicalMarks || 0) : 0);
+                    const totalMax = (m.maxMarks || 0) + (hasPrac ? (m.practicalMaxMarks || 30) : 0);
+                    const percent = totalMax > 0 ? ((totalObt / totalMax) * 100).toFixed(1) : '0';
                     return (
                       <tr key={m.id} className="hover:bg-slate-50">
                         <td className="px-4 py-2 font-semibold text-slate-800">{m.examType}</td>
                         <td className="px-4 py-2">{m.subject}</td>
-                        <td className="px-4 py-2 font-mono font-bold text-indigo-600">{m.marksObtained}</td>
-                        <td className="px-4 py-2 font-mono">{m.maxMarks}</td>
+                        <td className="px-4 py-2 font-mono text-slate-700">{m.marksObtained} / {m.maxMarks}</td>
+                        <td className="px-4 py-2 font-mono text-indigo-700 font-medium">
+                          {hasPrac ? `${m.practicalMarks} / ${m.practicalMaxMarks || 30}` : '-'}
+                        </td>
+                        <td className="px-4 py-2 font-mono font-bold text-indigo-900 bg-indigo-50/30">
+                          {totalObt} / {totalMax}
+                        </td>
                         <td className="px-4 py-2">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${Number(percent) >= 33 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
                             {percent}%

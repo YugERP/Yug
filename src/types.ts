@@ -200,7 +200,14 @@ export interface Homework {
   date: string;
 }
 
-export type ExamType = 'Half-Yearly Test' | 'Half-Yearly Exam' | 'Yearly Test' | 'Yearly Exam';
+export type ExamType = 
+  | 'Half-Yearly Test' 
+  | 'Half-Yearly Exam' 
+  | 'Half-Yearly Practical'
+  | 'Yearly Test' 
+  | 'Yearly Exam' 
+  | 'Yearly Practical'
+  | 'Practical Exam';
 
 export interface ExamMark {
   id: string;
@@ -209,8 +216,10 @@ export interface ExamMark {
   teacherId: string;
   examType: ExamType;
   subject: string;
-  marksObtained: number;
-  maxMarks: number;
+  marksObtained: number; // Theory / Written marks obtained
+  maxMarks: number; // Theory / Written max marks
+  practicalMarks?: number; // Practical / Experimental marks obtained (e.g. for Home Science, Science, Computer, Drawing, etc.)
+  practicalMaxMarks?: number; // Practical maximum marks (e.g. 30, 20, 10, etc.)
   date: string;
 }
 

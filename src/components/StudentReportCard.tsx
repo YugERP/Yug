@@ -4,7 +4,7 @@ import { type Student, type ExamMark, type ExamType } from '../types';
 import { Card, Button, Label } from './UI';
 import { Printer, Upload, RefreshCw, Award, BookOpen, CheckCircle, AlertCircle, FileText, X, Download, BarChart2, Eye } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { isSameGrade, isSameSubject, isValidPhotoUrl } from '../utils/gradeHelper';
+import { isSameGrade, isSameSubject, isValidPhotoUrl, isPracticalSubject } from '../utils/gradeHelper';
 
 const getSchoolNameStyle = (name: string, template: 'classic_portrait' | 'landscape_new') => {
   const len = name.length;
@@ -148,11 +148,13 @@ export function StudentReportCard({ student, onClose, allowEditPhoto = true }: S
   // Calculate global totals dynamically across all subjects
   let totalHyTestObt = 0;
   let totalHyExamObt = 0;
+  let totalHyPracObt = 0;
   let totalHyMax = 0;
   let totalHyObt = 0;
 
   let totalYTestObt = 0;
   let totalYExamObt = 0;
+  let totalYPracObt = 0;
   let totalYMax = 0;
   let totalYObt = 0;
 
@@ -163,33 +165,116 @@ export function StudentReportCard({ student, onClose, allowEditPhoto = true }: S
 
   const subjectRows = studentSubjects.map(subject => {
     const isGradingOnly = isSeniorGrade && ['p.t.', 'p.t', 'physical education', 'pt', 'games', 'physical & health education'].includes(subject.toLowerCase().trim());
+    const isSubjectPractical = isPracticalSubject(subject);
+
     const hyTest = studentMarks.find(m => isSameSubject(m.subject, subject) && m.examType === 'Half-Yearly Test');
     const hyExam = studentMarks.find(m => isSameSubject(m.subject, subject) && m.examType === 'Half-Yearly Exam');
+    const hyPracMark = studentMarks.find(m => isSameSubject(m.subject, subject) && (m.examType === 'Half-Yearly Practical' || m.examType === 'Practical Exam'));
+
     const yTest = studentMarks.find(m => isSameSubject(m.subject, subject) && m.examType === 'Yearly Test');
     const yExam = studentMarks.find(m => isSameSubject(m.subject, subject) && m.examType === 'Yearly Exam');
+    const yPracMark = studentMarks.find(m => isSameSubject(m.subject, subject) && (m.examType === 'Yearly Practical' || m.examType === 'Practical Exam'));
 
-    const hasHy = hyTest || hyExam;
-    const hasY = yTest || yExam;
+    const hasHy = !!(hyTest || hyExam || hyPracMark);
+    const hasY = !!(yTest || yExam || yPracMark);
     const hasAny = hasHy || hasY;
 
+    // Component Obtained Values
     const hyTestVal = hyTest ? hyTest.marksObtained : 0;
     const hyExamVal = hyExam ? hyExam.marksObtained : 0;
+    const hyPracVal = (hyExam && hyExam.practicalMarks !== undefined && !isNaN(hyExam.practicalMarks)) 
+      ? hyExam.practicalMarks 
+      : (hyPracMark ? hyPracMark.marksObtained : 0);
+    
     const yTestVal = yTest ? yTest.marksObtained : 0;
     const yExamVal = yExam ? yExam.marksObtained : 0;
+    const yPracVal = (yExam && yExam.practicalMarks !== undefined && !isNaN(yExam.practicalMarks)) 
+      ? yExam.practicalMarks 
+      : (yPracMark ? yPracMark.marksObtained : 0);
 
-    const hyTestMax = hyTest ? hyTest.maxMarks : (hasHy ? 10 : 0);
-    const hyExamMax = hyExam ? hyExam.maxMarks : (hasHy ? 90 : 0);
-    const yTestMax = yTest ? yTest.maxMarks : (hasY ? 10 : 0);
-    const yExamMax = yExam ? yExam.maxMarks : (hasY ? 90 : 0);
+    // Check if practical is applicable for this subject in HY / Yearly
+    const hasHyPracData = (hyExam && hyExam.practicalMarks !== undefined && hyExam.practicalMarks !== null) || 
+                          (hyExam && hyExam.practicalMaxMarks !== undefined && hyExam.practicalMaxMarks > 0) || 
+                          !!hyPracMark;
+    const hasYPracData = (yExam && yExam.practicalMarks !== undefined && yExam.practicalMarks !== null) || 
+                         (yExam && yExam.practicalMaxMarks !== undefined && yExam.practicalMaxMarks > 0) || 
+                         !!yPracMark;
 
-    const hyObt = hyTestVal + hyExamVal;
-    const hyMax = hyTestMax + hyExamMax;
+    const isHyPractical = hasHyPracData || isSubjectPractical;
+    const isYPractical = hasYPracData || isSubjectPractical;
 
-    const yObt = yTestVal + yExamVal;
-    const yMax = yTestMax + yExamMax;
+    // Dynamic Half-Yearly Max Marks
+    let hyTestMax = 0;
+    if (hyTest) {
+      hyTestMax = hyTest.maxMarks;
+    } else if (hasHy && !hyPracMark) {
+      hyTestMax = 10;
+    }
 
-    const finalObt = hyObt + yObt;
-    const finalMax = hyMax + yMax;
+    let hyExamMax = 0;
+    if (hyExam) {
+      hyExamMax = hyExam.maxMarks;
+    } else if (hasHy) {
+      hyExamMax = isHyPractical ? 60 : 90;
+    }
+
+    let hyPracMax = 0;
+    if (isHyPractical) {
+      if (hyExam && hyExam.practicalMaxMarks !== undefined && !isNaN(hyExam.practicalMaxMarks) && hyExam.practicalMaxMarks > 0) {
+        hyPracMax = hyExam.practicalMaxMarks;
+      } else if (hyPracMark && hyPracMark.maxMarks > 0) {
+        hyPracMax = hyPracMark.maxMarks;
+      } else if (hasHy) {
+        hyPracMax = (hyExamMax === 70) ? 20 : 30;
+      }
+    }
+
+    // Dynamic Yearly Max Marks
+    let yTestMax = 0;
+    if (yTest) {
+      yTestMax = yTest.maxMarks;
+    } else if (hasY && !yPracMark) {
+      yTestMax = 10;
+    }
+
+    let yExamMax = 0;
+    if (yExam) {
+      yExamMax = yExam.maxMarks;
+    } else if (hasY) {
+      yExamMax = isYPractical ? 60 : 90;
+    }
+
+    let yPracMax = 0;
+    if (isYPractical) {
+      if (yExam && yExam.practicalMaxMarks !== undefined && !isNaN(yExam.practicalMaxMarks) && yExam.practicalMaxMarks > 0) {
+        yPracMax = yExam.practicalMaxMarks;
+      } else if (yPracMark && yPracMark.maxMarks > 0) {
+        yPracMax = yPracMark.maxMarks;
+      } else if (hasY) {
+        yPracMax = (yExamMax === 70) ? 20 : 30;
+      }
+    }
+
+    // Dynamic Totals per row
+    const hyObt = hyTestVal + hyExamVal + hyPracVal;
+    const hyMax = hasHy ? (hyTestMax + hyExamMax + hyPracMax) : 0;
+
+    const yObt = yTestVal + yExamVal + yPracVal;
+    const yMax = hasY ? (yTestMax + yExamMax + yPracMax) : 0;
+
+    // Final Evaluation (adapts to whether one or both terms are active)
+    let finalObt = 0;
+    let finalMax = 0;
+    if (hasHy && hasY) {
+      finalObt = hyObt + yObt;
+      finalMax = hyMax + yMax;
+    } else if (hasY) {
+      finalObt = yObt;
+      finalMax = yMax;
+    } else if (hasHy) {
+      finalObt = hyObt;
+      finalMax = hyMax;
+    }
 
     const percentage = finalMax > 0 ? (finalObt / finalMax) * 100 : 0;
     const grade = hasAny ? getGradeFromPercentage(percentage) : '';
@@ -199,12 +284,14 @@ export function StudentReportCard({ student, onClose, allowEditPhoto = true }: S
       if (hasHy) {
         totalHyTestObt += hyTestVal;
         totalHyExamObt += hyExamVal;
+        totalHyPracObt += hyPracVal;
         totalHyMax += hyMax;
         totalHyObt += hyObt;
       }
       if (hasY) {
         totalYTestObt += yTestVal;
         totalYExamObt += yExamVal;
+        totalYPracObt += yPracVal;
         totalYMax += yMax;
         totalYObt += yObt;
       }
@@ -212,18 +299,32 @@ export function StudentReportCard({ student, onClose, allowEditPhoto = true }: S
       totalFinalObt += finalObt;
     }
 
+    const hasHyPrac = isHyPractical && (hasHyPracData || (hasHy && hyPracMax > 0));
+    const hasYPrac = isYPractical && (hasYPracData || (hasY && yPracMax > 0));
+
     return {
       subject,
       isGradingOnly,
+      isSubjectPractical,
       hasHy,
       hasY,
       hasAny,
+      hasHyPrac,
+      hasYPrac,
       hyTestVal,
       hyExamVal,
+      hyPracVal,
+      hyTestMax,
+      hyExamMax,
+      hyPracMax,
       hyMax,
       hyObt,
       yTestVal,
       yExamVal,
+      yPracVal,
+      yTestMax,
+      yExamMax,
+      yPracMax,
       yMax,
       yObt,
       finalMax,
@@ -231,8 +332,10 @@ export function StudentReportCard({ student, onClose, allowEditPhoto = true }: S
       grade,
       hyTestExists: !!hyTest,
       hyExamExists: !!hyExam,
+      hyPracExists: hasHyPracData,
       yTestExists: !!yTest,
       yExamExists: !!yExam,
+      yPracExists: hasYPracData,
     };
   });
 
@@ -729,61 +832,73 @@ export function StudentReportCard({ student, onClose, allowEditPhoto = true }: S
 
                 {/* Subjects & Marks Grid table */}
                 <div className="overflow-x-auto my-4">
-                  <table className="w-full border-2 border-[#002060] text-center text-[10.5px] font-serif border-collapse">
+                  <table className="w-full border-2 border-[#002060] text-center text-[10px] font-serif border-collapse">
                     <thead>
                       <tr className="border-b-2 border-[#002060]">
-                        <th rowSpan={2} className="border-r-2 border-[#002060] p-2 text-center align-middle text-slate-800 font-black w-[18%]">SUBJECT</th>
-                        <th colSpan={4} className="border-r-2 border-[#002060] p-1.5 text-center font-extrabold text-[#002060] uppercase bg-slate-50 text-[10px]">HALF YEARLY EXAMINATION</th>
-                        <th colSpan={7} className="p-1.5 text-center font-extrabold text-[#002060] uppercase bg-slate-50 text-[10px]">ANNUAL EXAMINATION</th>
+                        <th rowSpan={2} className="border-r-2 border-[#002060] p-2 text-center align-middle text-slate-800 font-black w-[16%]">SUBJECT</th>
+                        <th colSpan={5} className="border-r-2 border-[#002060] p-1.5 text-center font-extrabold text-[#002060] uppercase bg-slate-50 text-[10px]">HALF YEARLY EXAMINATION</th>
+                        <th colSpan={5} className="border-r-2 border-[#002060] p-1.5 text-center font-extrabold text-[#002060] uppercase bg-slate-50 text-[10px]">ANNUAL EXAMINATION</th>
+                        <th colSpan={3} className="p-1.5 text-center font-extrabold text-[#002060] uppercase bg-slate-50 text-[10px]">FINAL EVALUATION</th>
                       </tr>
-                      <tr className="border-b-2 border-[#002060] text-[8.5px] font-bold text-slate-700 bg-slate-50/50">
+                      <tr className="border-b-2 border-[#002060] text-[8px] font-bold text-slate-700 bg-slate-50/50">
                         {/* Half Yearly columns */}
-                        <th className="border-r border-[#002060] p-1 w-[6%]">TEST<br/>(10)</th>
-                        <th className="border-r border-[#002060] p-1 w-[7%]">H.Y EXAM<br/>(90)</th>
-                        <th className="border-r border-[#002060] p-1 w-[8%]">TOTAL<br/>(100)</th>
-                        <th className="border-r-2 border-[#002060] p-1 w-[9%] text-[#002060]">OBT.<br/>MARKS</th>
+                        <th className="border-r border-[#002060] p-1 w-[5%]">TEST<br/>(10)</th>
+                        <th className="border-r border-[#002060] p-1 w-[6.5%]">THEORY<br/>(90/70)</th>
+                        <th className="border-r border-[#002060] p-1 w-[6%] text-indigo-900 bg-indigo-50/40">PRAC.<br/>(30)</th>
+                        <th className="border-r border-[#002060] p-1 w-[6.5%]">TOTAL<br/>(100)</th>
+                        <th className="border-r-2 border-[#002060] p-1 w-[7.5%] text-[#002060]">OBT.<br/>MARKS</th>
                         {/* Annual columns */}
-                        <th className="border-r border-[#002060] p-1 w-[6%]">TEST<br/>(10)</th>
-                        <th className="border-r border-[#002060] p-1 w-[7%]">ANNUAL<br/>(90)</th>
-                        <th className="border-r border-[#002060] p-1 w-[8%]">TOTAL<br/>(100)</th>
-                        <th className="border-r border-[#002060] p-1 w-[9%] text-[#002060]">OBT.<br/>MARKS</th>
-                        <th className="border-r border-[#002060] p-1 w-[7%]">FINAL<br/>TOTAL (200)</th>
-                        <th className="border-r border-[#002060] p-1 w-[8%] text-[#002060]">FINAL OBT.<br/>MARKS</th>
+                        <th className="border-r border-[#002060] p-1 w-[5%]">TEST<br/>(10)</th>
+                        <th className="border-r border-[#002060] p-1 w-[6.5%]">THEORY<br/>(90/70)</th>
+                        <th className="border-r border-[#002060] p-1 w-[6%] text-indigo-900 bg-indigo-50/40">PRAC.<br/>(30)</th>
+                        <th className="border-r border-[#002060] p-1 w-[6.5%]">TOTAL<br/>(100)</th>
+                        <th className="border-r-2 border-[#002060] p-1 w-[7.5%] text-[#002060]">OBT.<br/>MARKS</th>
+                        {/* Final evaluation columns */}
+                        <th className="border-r border-[#002060] p-1 w-[7%]">FINAL<br/>TOTAL</th>
+                        <th className="border-r border-[#002060] p-1 w-[7%] text-[#002060]">FINAL OBT.<br/>MARKS</th>
                         <th className="p-1 w-[7%] text-indigo-700">GRADE</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#002060]">
                       {subjectRows.map((sub, index) => (
                         <tr key={`${sub.subject}-${index}`} className="hover:bg-slate-50/20">
-                          <td className="border-r-2 border-[#002060] text-left px-3 py-1.5 font-extrabold uppercase text-[#002060] bg-slate-50/20">{sub.subject}</td>
-                          <td className="border-r border-[#002060] p-1.5 font-bold text-center font-mono">{displayVal(sub.hyTestExists, sub.hyTestVal)}</td>
-                          <td className="border-r border-[#002060] p-1.5 font-bold text-center font-mono">{displayVal(sub.hyExamExists, sub.hyExamVal)}</td>
-                          <td className="border-r border-[#002060] p-1.5 font-bold text-center font-mono text-slate-500">{sub.hasHy ? 100 : ''}</td>
-                          <td className="border-r-2 border-[#002060] p-1.5 font-black text-center font-mono text-slate-900 bg-indigo-50/10">{sub.hasHy ? sub.hyObt : ''}</td>
-                          <td className="border-r border-[#002060] p-1.5 font-bold text-center font-mono">{displayVal(sub.yTestExists, sub.yTestVal)}</td>
-                          <td className="border-r border-[#002060] p-1.5 font-bold text-center font-mono">{displayVal(sub.yExamExists, sub.yExamVal)}</td>
-                          <td className="border-r border-[#002060] p-1.5 font-bold text-center font-mono text-slate-500">{sub.hasY ? 100 : ''}</td>
-                          <td className="border-r border-[#002060] p-1.5 font-black text-center font-mono text-slate-900 bg-indigo-50/10">{sub.hasY ? sub.yObt : ''}</td>
-                          <td className="border-r border-[#002060] p-1.5 font-bold text-center font-mono text-slate-500">{sub.hasAny ? sub.finalMax : ''}</td>
-                          <td className="border-r border-[#002060] p-1.5 font-black text-center font-mono text-[#002060] bg-indigo-50/25">{sub.hasAny ? sub.finalObt : ''}</td>
-                          <td className="p-1.5 font-black text-center text-indigo-800 bg-indigo-50/40">{sub.hasAny ? sub.grade : ''}</td>
+                          <td className="border-r-2 border-[#002060] text-left px-2.5 py-1.5 font-extrabold uppercase text-[#002060] bg-slate-50/20">{sub.subject}</td>
+                          <td className="border-r border-[#002060] p-1 font-bold text-center font-mono">{displayVal(sub.hyTestExists, sub.hyTestVal)}</td>
+                          <td className="border-r border-[#002060] p-1 font-bold text-center font-mono">{displayVal(sub.hyExamExists, sub.hyExamVal)}</td>
+                          <td className="border-r border-[#002060] p-1 font-bold text-center font-mono text-indigo-900 bg-indigo-50/20">
+                            {sub.hasHyPrac || sub.isSubjectPractical ? displayVal(sub.hyPracExists, sub.hyPracVal) : '-'}
+                          </td>
+                          <td className="border-r border-[#002060] p-1 font-bold text-center font-mono text-slate-500">{sub.hasHy ? sub.hyMax : ''}</td>
+                          <td className="border-r-2 border-[#002060] p-1 font-black text-center font-mono text-slate-900 bg-indigo-50/10">{sub.hasHy ? sub.hyObt : ''}</td>
+                          <td className="border-r border-[#002060] p-1 font-bold text-center font-mono">{displayVal(sub.yTestExists, sub.yTestVal)}</td>
+                          <td className="border-r border-[#002060] p-1 font-bold text-center font-mono">{displayVal(sub.yExamExists, sub.yExamVal)}</td>
+                          <td className="border-r border-[#002060] p-1 font-bold text-center font-mono text-indigo-900 bg-indigo-50/20">
+                            {sub.hasYPrac || sub.isSubjectPractical ? displayVal(sub.yPracExists, sub.yPracVal) : '-'}
+                          </td>
+                          <td className="border-r border-[#002060] p-1 font-bold text-center font-mono text-slate-500">{sub.hasY ? sub.yMax : ''}</td>
+                          <td className="border-r-2 border-[#002060] p-1 font-black text-center font-mono text-slate-900 bg-indigo-50/10">{sub.hasY ? sub.yObt : ''}</td>
+                          <td className="border-r border-[#002060] p-1 font-bold text-center font-mono text-slate-500">{sub.hasAny ? sub.finalMax : ''}</td>
+                          <td className="border-r border-[#002060] p-1 font-black text-center font-mono text-[#002060] bg-indigo-50/25">{sub.hasAny ? sub.finalObt : ''}</td>
+                          <td className="p-1 font-black text-center text-indigo-800 bg-indigo-50/40">{sub.hasAny ? sub.grade : ''}</td>
                         </tr>
                       ))}
                       
                       {/* Row Total */}
                       <tr className="font-black text-slate-900 bg-slate-100 border-t-2 border-[#002060]">
-                        <td className="border-r-2 border-[#002060] text-left px-3 py-2 font-black uppercase text-[#002060]">TOTAL</td>
-                        <td className="border-r border-[#002060] p-2"></td>
-                        <td className="border-r border-[#002060] p-2"></td>
-                        <td className="border-r border-[#002060] p-2 font-mono text-slate-600">{totalHyMax > 0 ? totalHyMax : ''}</td>
-                        <td className="border-r-2 border-[#002060] p-2 font-mono text-slate-900">{totalHyObt > 0 ? totalHyObt : ''}</td>
-                        <td className="border-r border-[#002060] p-2"></td>
-                        <td className="border-r border-[#002060] p-2"></td>
-                        <td className="border-r border-[#002060] p-2 font-mono text-slate-600">{totalYMax > 0 ? totalYMax : ''}</td>
-                        <td className="border-r border-[#002060] p-2 font-mono text-slate-900">{totalYObt > 0 ? totalYObt : ''}</td>
-                        <td className="border-r border-[#002060] p-2 font-mono text-slate-600">{totalFinalMax > 0 ? totalFinalMax : ''}</td>
-                        <td className="border-r border-[#002060] p-2 font-mono text-[#002060] text-[11.5px] font-black">{totalFinalObt > 0 ? totalFinalObt : ''}</td>
-                        <td className="p-2 text-indigo-900 text-[11.5px] font-black">{totalFinalMax > 0 ? overallGrade : ''}</td>
+                        <td className="border-r-2 border-[#002060] text-left px-2.5 py-2 font-black uppercase text-[#002060]">TOTAL</td>
+                        <td className="border-r border-[#002060] p-1"></td>
+                        <td className="border-r border-[#002060] p-1"></td>
+                        <td className="border-r border-[#002060] p-1"></td>
+                        <td className="border-r border-[#002060] p-1 font-mono text-slate-600">{totalHyMax > 0 ? totalHyMax : ''}</td>
+                        <td className="border-r-2 border-[#002060] p-1 font-mono text-slate-900">{totalHyObt > 0 ? totalHyObt : ''}</td>
+                        <td className="border-r border-[#002060] p-1"></td>
+                        <td className="border-r border-[#002060] p-1"></td>
+                        <td className="border-r border-[#002060] p-1"></td>
+                        <td className="border-r border-[#002060] p-1 font-mono text-slate-600">{totalYMax > 0 ? totalYMax : ''}</td>
+                        <td className="border-r-2 border-[#002060] p-1 font-mono text-slate-900">{totalYObt > 0 ? totalYObt : ''}</td>
+                        <td className="border-r border-[#002060] p-1 font-mono text-slate-600">{totalFinalMax > 0 ? totalFinalMax : ''}</td>
+                        <td className="border-r border-[#002060] p-1 font-mono text-[#002060] text-[11px] font-black">{totalFinalObt > 0 ? totalFinalObt : ''}</td>
+                        <td className="p-1 text-indigo-900 text-[11px] font-black">{totalFinalMax > 0 ? overallGrade : ''}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -996,40 +1111,50 @@ export function StudentReportCard({ student, onClose, allowEditPhoto = true }: S
                 <div className="grid grid-cols-12 gap-3 mb-2">
                   {/* Marks grid */}
                   <div className="col-span-9 overflow-x-auto">
-                    <table className="w-full border-2 border-[#002060] text-center text-[9px] font-serif border-collapse">
+                    <table className="w-full border-2 border-[#002060] text-center text-[8.5px] font-serif border-collapse">
                       <thead>
                         <tr className="border-b border-[#002060] bg-slate-50/50">
-                          <th rowSpan={2} className="border-r border-[#002060] p-1 text-center align-middle text-slate-800 font-black w-[18%]">SUBJECT</th>
-                          <th colSpan={4} className="border-r border-[#002060] p-0.5 text-center font-extrabold text-[#002060] uppercase text-[8px]">HALF YEARLY EXAMINATION</th>
-                          <th colSpan={7} className="p-0.5 text-center font-extrabold text-[#002060] uppercase text-[8px]">ANNUAL EXAMINATION</th>
+                          <th rowSpan={2} className="border-r border-[#002060] p-1 text-center align-middle text-slate-800 font-black w-[16%]">SUBJECT</th>
+                          <th colSpan={5} className="border-r border-[#002060] p-0.5 text-center font-extrabold text-[#002060] uppercase text-[8px]">HALF YEARLY EXAMINATION</th>
+                          <th colSpan={5} className="border-r border-[#002060] p-0.5 text-center font-extrabold text-[#002060] uppercase text-[8px]">ANNUAL EXAMINATION</th>
+                          <th colSpan={3} className="p-0.5 text-center font-extrabold text-[#002060] uppercase text-[8px]">FINAL EVALUATION</th>
                         </tr>
-                        <tr className="border-b border-[#002060] text-[7.5px] font-bold text-slate-700 bg-slate-100/50">
+                        <tr className="border-b border-[#002060] text-[7px] font-bold text-slate-700 bg-slate-100/50">
                           {/* Half Yearly columns */}
-                          <th className="border-r border-[#002060] p-0.5 w-[6%]">TEST<br/>(10)</th>
-                          <th className="border-r border-[#002060] p-0.5 w-[7%]">H.Y. EXAM<br/>(90)</th>
-                          <th className="border-r border-[#002060] p-0.5 w-[8%]">TOTAL<br/>(100)</th>
-                          <th className="border-r border-[#002060] p-0.5 w-[9%] text-[#002060]">OBT.<br/>MARKS</th>
+                          <th className="border-r border-[#002060] p-0.5 w-[5%]">TEST<br/>(10)</th>
+                          <th className="border-r border-[#002060] p-0.5 w-[6.5%]">THEORY<br/>(90/70)</th>
+                          <th className="border-r border-[#002060] p-0.5 w-[6%] text-indigo-900 bg-indigo-50/40">PRAC.<br/>(30)</th>
+                          <th className="border-r border-[#002060] p-0.5 w-[6.5%]">TOTAL<br/>(100)</th>
+                          <th className="border-r border-[#002060] p-0.5 w-[7.5%] text-[#002060]">OBT.<br/>MARKS</th>
                           {/* Annual columns */}
-                          <th className="border-r border-[#002060] p-0.5 w-[6%]">TEST<br/>(10)</th>
-                          <th className="border-r border-[#002060] p-0.5 w-[7%]">ANNUAL<br/>(90)</th>
-                          <th className="border-r border-[#002060] p-0.5 w-[7%]">ANNUAL<br/>(90)</th>
-                          <th className="border-r border-[#002060] p-0.5 w-[8%] text-[#002060]">OBT.<br/>(100)</th>
-                          <th className="border-r border-[#002060] p-0.5 w-[9%]">TOTAL<br/>TOTAL (200)</th>
-                          <th className="border-r border-[#002060] p-0.5 w-[9%] text-[#002060]">FINAL OBT.<br/>MARKS</th>
-                          <th className="p-0.5 w-[6%] text-indigo-700">GRADE</th>
+                          <th className="border-r border-[#002060] p-0.5 w-[5%]">TEST<br/>(10)</th>
+                          <th className="border-r border-[#002060] p-0.5 w-[6.5%]">THEORY<br/>(90/70)</th>
+                          <th className="border-r border-[#002060] p-0.5 w-[6%] text-indigo-900 bg-indigo-50/40">PRAC.<br/>(30)</th>
+                          <th className="border-r border-[#002060] p-0.5 w-[6.5%]">TOTAL<br/>(100)</th>
+                          <th className="border-r border-[#002060] p-0.5 w-[7.5%] text-[#002060]">OBT.<br/>MARKS</th>
+                          {/* Final columns */}
+                          <th className="border-r border-[#002060] p-0.5 w-[7%]">FINAL<br/>TOTAL</th>
+                          <th className="border-r border-[#002060] p-0.5 w-[7%] text-[#002060]">FINAL OBT.<br/>MARKS</th>
+                          <th className="p-0.5 w-[6.5%] text-indigo-700">GRADE</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#002060]">
                         {subjectRows.map((sub, index) => (
-                          <tr key={`${sub.subject}-${index}`} className="hover:bg-slate-50/20 text-[9px]">
+                          <tr key={`${sub.subject}-${index}`} className="hover:bg-slate-50/20 text-[8.5px]">
                             <td className="border-r border-[#002060] text-left px-1.5 py-0.5 font-extrabold uppercase text-[#002060] bg-slate-50/10">{sub.subject}</td>
                             <td className="border-r border-[#002060] p-0.5 font-bold text-center font-mono">{displayVal(sub.hyTestExists, sub.hyTestVal)}</td>
                             <td className="border-r border-[#002060] p-0.5 font-bold text-center font-mono">{displayVal(sub.hyExamExists, sub.hyExamVal)}</td>
-                            <td className="border-r border-[#002060] p-0.5 font-bold text-center font-mono text-slate-400">{sub.hasHy ? 100 : ''}</td>
+                            <td className="border-r border-[#002060] p-0.5 font-bold text-center font-mono text-indigo-900 bg-indigo-50/20">
+                              {sub.hasHyPrac || sub.isSubjectPractical ? displayVal(sub.hyPracExists, sub.hyPracVal) : '-'}
+                            </td>
+                            <td className="border-r border-[#002060] p-0.5 font-bold text-center font-mono text-slate-400">{sub.hasHy ? sub.hyMax : ''}</td>
                             <td className="border-r border-[#002060] p-0.5 font-black text-center font-mono text-slate-900 bg-indigo-50/10">{sub.hasHy ? sub.hyObt : ''}</td>
                             <td className="border-r border-[#002060] p-0.5 font-bold text-center font-mono">{displayVal(sub.yTestExists, sub.yTestVal)}</td>
                             <td className="border-r border-[#002060] p-0.5 font-bold text-center font-mono">{displayVal(sub.yExamExists, sub.yExamVal)}</td>
-                            <td className="border-r border-[#002060] p-0.5 font-bold text-center font-mono text-slate-400">{sub.hasY ? 90 : ''}</td>
+                            <td className="border-r border-[#002060] p-0.5 font-bold text-center font-mono text-indigo-900 bg-indigo-50/20">
+                              {sub.hasYPrac || sub.isSubjectPractical ? displayVal(sub.yPracExists, sub.yPracVal) : '-'}
+                            </td>
+                            <td className="border-r border-[#002060] p-0.5 font-bold text-center font-mono text-slate-400">{sub.hasY ? sub.yMax : ''}</td>
                             <td className="border-r border-[#002060] p-0.5 font-black text-center font-mono text-slate-900 bg-indigo-50/10">{sub.hasY ? sub.yObt : ''}</td>
                             <td className="border-r border-[#002060] p-0.5 font-bold text-center font-mono text-slate-400">{sub.hasAny ? sub.finalMax : ''}</td>
                             <td className="border-r border-[#002060] p-0.5 font-black text-center font-mono text-[#002060] bg-indigo-50/25">{sub.hasAny ? sub.finalObt : ''}</td>
@@ -1038,15 +1163,17 @@ export function StudentReportCard({ student, onClose, allowEditPhoto = true }: S
                         ))}
                         
                         {/* Row Total */}
-                        <tr className="font-black text-slate-900 bg-slate-100 border-t border-[#002060] text-[9px]">
+                        <tr className="font-black text-slate-900 bg-slate-100 border-t border-[#002060] text-[8.5px]">
                           <td className="border-r border-[#002060] text-left px-1.5 py-1 font-black uppercase text-[#002060]">TOTAL</td>
+                          <td className="border-r border-[#002060] p-0.5"></td>
                           <td className="border-r border-[#002060] p-0.5"></td>
                           <td className="border-r border-[#002060] p-0.5"></td>
                           <td className="border-r border-[#002060] p-0.5 font-mono text-slate-600">{totalHyMax > 0 ? totalHyMax : ''}</td>
                           <td className="border-r border-[#002060] p-0.5 font-mono text-slate-900">{totalHyObt > 0 ? totalHyObt : ''}</td>
                           <td className="border-r border-[#002060] p-0.5"></td>
                           <td className="border-r border-[#002060] p-0.5"></td>
-                          <td className="border-r border-[#002060] p-0.5 font-mono text-slate-600"></td>
+                          <td className="border-r border-[#002060] p-0.5"></td>
+                          <td className="border-r border-[#002060] p-0.5 font-mono text-slate-600">{totalYMax > 0 ? totalYMax : ''}</td>
                           <td className="border-r border-[#002060] p-0.5 font-mono text-slate-900">{totalYObt > 0 ? totalYObt : ''}</td>
                           <td className="border-r border-[#002060] p-0.5 font-mono text-slate-600">{totalFinalMax > 0 ? totalFinalMax : ''}</td>
                           <td className="border-r border-[#002060] p-0.5 font-mono text-[#002060] font-black">{totalFinalObt > 0 ? totalFinalObt : ''}</td>

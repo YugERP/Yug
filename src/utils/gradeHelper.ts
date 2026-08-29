@@ -186,35 +186,91 @@ export function isSameSubject(s1?: string | null, s2?: string | null): boolean {
 }
 
 /**
+ * Checks if a subject typically has a practical component (e.g., Home Science, Science, Physics, Chemistry, Biology, Computer Science, Drawing, P.T., Geography, etc.)
+ */
+export function isPracticalSubject(subjectName?: string | null): boolean {
+  if (!subjectName) return false;
+  const sub = normalizeSubject(subjectName).toLowerCase();
+  const raw = subjectName.toLowerCase();
+  return (
+    sub.includes('home science') ||
+    raw.includes('home sci') ||
+    raw.includes('गृह विज्ञान') ||
+    sub === 'science' ||
+    raw.includes('विज्ञान') ||
+    sub.includes('computer') ||
+    raw.includes('कंप्यूटर') ||
+    sub.includes('physics') ||
+    sub.includes('chemistry') ||
+    sub.includes('biology') ||
+    sub.includes('drawing') ||
+    raw.includes('कला') ||
+    sub.includes('p.t.') ||
+    sub.includes('geography') ||
+    sub.includes('music')
+  );
+}
+
+/**
+ * Returns suggested default practical max marks for a given subject & exam
+ */
+export function getDefaultPracticalMaxMarks(subjectName?: string | null, examType?: string): number {
+  if (!isPracticalSubject(subjectName)) return 0;
+  if (examType === 'Half-Yearly Test' || examType === 'Yearly Test') {
+    return 0; // Tests are usually 10 written/oral
+  }
+  // For Half-Yearly Exam & Yearly Exam, standard practical max is 30 (or 20/10)
+  return 30;
+}
+
+import { type ExamType } from '../types';
+
+/**
  * Robust parser for exam column headers in imported CSV files.
  * Handles formats like:
  * - "Hindi Half-Yearly Test Obtained", "Hindi Half-Yearly Test Max"
- * - "Hindi Half-Yearly Exam Obtained", "Hindi Yearly Exam Max"
+ * - "Home Science Practical Obtained", "Home Science Practical Max"
+ * - "Science Half-Yearly Practical", "Science Practical"
  * - "Hindi (Half-Yearly Test)", "Mathematics Yearly Exam"
  * - "Hindi_Marks", "Maths_Marks", "Science"
  */
-export function parseExamHeader(headerName: string): { subject: string; examType: 'Half-Yearly Test' | 'Half-Yearly Exam' | 'Yearly Test' | 'Yearly Exam'; isMax: boolean } | null {
+export function parseExamHeader(headerName: string): { 
+  subject: string; 
+  examType: ExamType; 
+  isMax: boolean;
+  isPractical: boolean;
+} | null {
   const clean = headerName.replace(/["']/g, '').trim();
   if (!clean) return null;
 
   const isMax = /\b(max|maximum|total|maxmarks|max_marks)\b/i.test(clean);
+  const isPractical = /\b(practical|prac|prct|प्रयोग|प्रायोगिक)\b/i.test(clean);
 
   // Check known exam types in order of specificity
-  let examType: 'Half-Yearly Test' | 'Half-Yearly Exam' | 'Yearly Test' | 'Yearly Exam' = 'Yearly Exam';
+  let examType: ExamType = 'Yearly Exam';
   let textWithoutExam = clean;
 
-  if (/half[-_\s]?yearly[-_\s]?test|half[-_\s]?year[-_\s]?test|hy[-_\s]?test|half[-_\s]?test/i.test(clean)) {
+  if (/half[-_\s]?yearly[-_\s]?practical|hy[-_\s]?practical|half[-_\s]?practical/i.test(clean)) {
+    examType = 'Half-Yearly Practical';
+    textWithoutExam = clean.replace(/half[-_\s]?yearly[-_\s]?practical|hy[-_\s]?practical|half[-_\s]?practical/gi, '');
+  } else if (/yearly[-_\s]?practical|annual[-_\s]?practical|final[-_\s]?practical|y[-_\s]?practical/i.test(clean)) {
+    examType = 'Yearly Practical';
+    textWithoutExam = clean.replace(/yearly[-_\s]?practical|annual[-_\s]?practical|final[-_\s]?practical|y[-_\s]?practical/gi, '');
+  } else if (/half[-_\s]?yearly[-_\s]?test|half[-_\s]?year[-_\s]?test|hy[-_\s]?test|half[-_\s]?test/i.test(clean)) {
     examType = 'Half-Yearly Test';
     textWithoutExam = clean.replace(/half[-_\s]?yearly[-_\s]?test|half[-_\s]?year[-_\s]?test|hy[-_\s]?test|half[-_\s]?test/gi, '');
   } else if (/half[-_\s]?yearly[-_\s]?exam|half[-_\s]?year[-_\s]?exam|hy[-_\s]?exam|half[-_\s]?yearly|half[-_\s]?year|hy/i.test(clean)) {
-    examType = 'Half-Yearly Exam';
+    examType = isPractical ? 'Half-Yearly Practical' : 'Half-Yearly Exam';
     textWithoutExam = clean.replace(/half[-_\s]?yearly[-_\s]?exam|half[-_\s]?year[-_\s]?exam|hy[-_\s]?exam|half[-_\s]?yearly|half[-_\s]?year|hy/gi, '');
   } else if (/yearly[-_\s]?test|annual[-_\s]?test|final[-_\s]?test|y[-_\s]?test/i.test(clean)) {
     examType = 'Yearly Test';
     textWithoutExam = clean.replace(/yearly[-_\s]?test|annual[-_\s]?test|final[-_\s]?test|y[-_\s]?test/gi, '');
   } else if (/yearly[-_\s]?exam|annual[-_\s]?exam|final[-_\s]?exam|annual|yearly|final/i.test(clean)) {
-    examType = 'Yearly Exam';
+    examType = isPractical ? 'Yearly Practical' : 'Yearly Exam';
     textWithoutExam = clean.replace(/yearly[-_\s]?exam|annual[-_\s]?exam|final[-_\s]?exam|annual|yearly|final/gi, '');
+  } else if (/\bpractical\b|\bप्रयोग\b|\bप्रायोगिक\b/i.test(clean)) {
+    examType = 'Practical Exam';
+    textWithoutExam = clean.replace(/\bpractical\b|\bप्रयोग\b|\bप्रायोगिक\b/gi, '');
   } else if (/\btest\b/i.test(clean)) {
     examType = 'Half-Yearly Test';
     textWithoutExam = clean.replace(/\btest\b/gi, '');
@@ -223,9 +279,9 @@ export function parseExamHeader(headerName: string): { subject: string; examType
     textWithoutExam = clean.replace(/\bexam\b/gi, '');
   }
 
-  // Strip trailing/leading keywords like "Obtained", "Max", "Marks", "Score", parentheses, underscores
+  // Strip trailing/leading keywords like "Obtained", "Max", "Marks", "Score", "Practical", parentheses, underscores
   let subjectText = textWithoutExam
-    .replace(/\b(obtained|obt|max|maximum|total|maxmarks|max_marks|marks|mark|score|points)\b/gi, '')
+    .replace(/\b(obtained|obt|max|maximum|total|maxmarks|max_marks|marks|mark|score|points|practical|prac|prct|प्रयोग|प्रायोगिक)\b/gi, '')
     .replace(/[()[\]_]/g, ' ')
     .trim();
 
@@ -245,7 +301,7 @@ export function parseExamHeader(headerName: string): { subject: string; examType
   }
 
   const subject = normalizeSubject(subjectText);
-  return { subject, examType, isMax };
+  return { subject, examType, isMax, isPractical };
 }
 
 /**

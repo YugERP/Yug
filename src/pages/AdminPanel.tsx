@@ -402,47 +402,53 @@ export function AdminPanel() {
           };
 
           // Extract all exam marks for this student row
-          const rowMarks: Omit<ExamMark, 'id' | 'date' | 'schoolId'>[] = [];
+          const rowMarksMap = new Map<string, Omit<ExamMark, 'id' | 'date' | 'schoolId'>>();
+          
           for (let i = 0; i < cols.length; i++) {
             const colNameHeader = headerLine[i];
             if (!colNameHeader) continue;
             const parsedExam = parseExamHeader(colNameHeader);
             if (parsedExam && !parsedExam.isMax) {
-              const marksObtained = Number(cols[i]);
-              if (!isNaN(marksObtained) && cols[i] !== '') {
-                // Find if there is an explicit Max column
-                let maxMarks = 100;
-                // Check if next column is the matching Max
-                if (i + 1 < cols.length && headerLine[i + 1]) {
-                  const nextExam = parseExamHeader(headerLine[i + 1]);
-                  if (nextExam && nextExam.isMax && isSameSubject(nextExam.subject, parsedExam.subject)) {
-                    const parsedMax = Number(cols[i + 1]);
-                    if (!isNaN(parsedMax) && parsedMax > 0) {
-                      maxMarks = parsedMax;
-                    }
-                  }
-                }
-                
-                // Fallback default based on exam type
-                if (maxMarks === 100) {
-                  if (parsedExam.examType === 'Half-Yearly Test' || parsedExam.examType === 'Yearly Test') {
-                    maxMarks = 10;
-                  } else if (parsedExam.examType === 'Half-Yearly Exam' || parsedExam.examType === 'Yearly Exam') {
-                    maxMarks = 90;
-                  }
-                }
-
-                rowMarks.push({
+              const val = Number(cols[i]);
+              if (!isNaN(val) && cols[i] !== '') {
+                const markKey = `${parsedExam.examType}:::${parsedExam.subject}`;
+                const existingMark: Omit<ExamMark, 'id' | 'date' | 'schoolId'> = rowMarksMap.get(markKey) || {
                   studentId: tempStudentId,
                   teacherId: currentUser?.id || 'admin',
                   examType: parsedExam.examType,
                   subject: parsedExam.subject,
-                  marksObtained,
-                  maxMarks
-                });
+                  marksObtained: 0,
+                  maxMarks: (parsedExam.examType === 'Half-Yearly Test' || parsedExam.examType === 'Yearly Test') ? 10 : 90,
+                };
+
+                // Find if there is an explicit Max column
+                let explicitMax: number | undefined;
+                if (i + 1 < cols.length && headerLine[i + 1]) {
+                  const nextExam = parseExamHeader(headerLine[i + 1]);
+                  if (nextExam && nextExam.isMax && isSameSubject(nextExam.subject, parsedExam.subject) && nextExam.isPractical === parsedExam.isPractical) {
+                    const parsedMax = Number(cols[i + 1]);
+                    if (!isNaN(parsedMax) && parsedMax > 0) {
+                      explicitMax = parsedMax;
+                    }
+                  }
+                }
+
+                if (parsedExam.isPractical) {
+                  existingMark.practicalMarks = val;
+                  existingMark.practicalMaxMarks = explicitMax !== undefined ? explicitMax : 30;
+                } else {
+                  existingMark.marksObtained = val;
+                  if (explicitMax !== undefined) {
+                    existingMark.maxMarks = explicitMax;
+                  }
+                }
+
+                rowMarksMap.set(markKey, existingMark);
               }
             }
           }
+
+          const rowMarks: Omit<ExamMark, 'id' | 'date' | 'schoolId'>[] = Array.from(rowMarksMap.values());
 
           // Check if this student matches any existing record
           const duplicateMatch = findDuplicateStudentMatch(parsedStudent);
