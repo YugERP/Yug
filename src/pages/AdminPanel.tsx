@@ -166,7 +166,7 @@ export function AdminPanel() {
     marks.forEach(m => examCombos.add(`${m.subject}:::${m.examType}`));
     const dynamicExamCols = Array.from(examCombos).sort();
 
-    const baseHeader = ['SR_No', 'Admission_No', 'Name', 'Gender', 'Father', 'Mother', 'DOB', 'Mobile', 'Aadhar', 'Email', 'Address', 'Class', 'RollNo', 'AcademicSession', 'PreviousClass', 'Stream', 'Password', 'FeeBalance'];
+    const baseHeader = ['SR_No', 'Admission_No', 'Name', 'Gender', 'Father', 'Mother', 'DOB', 'Mobile', 'Aadhar', 'Email', 'Address', 'Class', 'RollNo', 'AcademicSession', 'PreviousClass', 'Stream', 'Password', 'FeeBalance', 'Photo_URL'];
     
     const dynamicHeaders = dynamicExamCols.flatMap(col => {
       const [subject, examType] = col.split(':::');
@@ -179,7 +179,7 @@ export function AdminPanel() {
       const fullAddress = s.address || [s.presentVillageMohalla, s.presentPostOffice, s.presentDistrict, s.presentState, s.presentPinCode].filter(Boolean).join(', ') || '';
       const sBase = [
         s.srNo || '', s.admissionNo || '', s.name, s.gender||'', s.fatherName||'', s.motherName||'', s.dob||'', s.mobile||'', s.aadhar||'', s.email||'', `"${fullAddress}"`,
-        s.grade, s.rollNo, s.academicSession||'', s.previousClass||'', s.stream||'', s.password||'', s.feeBalance
+        s.grade, s.rollNo, s.academicSession||'', s.previousClass||'', s.stream||'', s.password||'', s.feeBalance, s.photoUrl || ''
       ];
 
       const sMarks = dynamicExamCols.flatMap(col => {
@@ -367,6 +367,7 @@ export function AdminPanel() {
             stream: rawStream as any,
             password: getCol(cols, ['password', 'pwd'], 16) || 'password123',
             feeBalance: Number(getCol(cols, ['feebalance', 'fee_balance', 'dues', 'balance'], 17) || 0),
+            photoUrl: getCol(cols, ['photourl', 'photo', 'photolink', 'image', 'picture'], 18) || undefined,
             subjects: getDefaultSubjectsForGrade(normalizedGrade, rawStream),
             isDeleted: false
           };
@@ -417,14 +418,40 @@ export function AdminPanel() {
           // Check if this student matches any existing record
           const duplicateMatch = findDuplicateStudentMatch(parsedStudent);
           if (duplicateMatch) {
-            const existingId = duplicateMatch.existing.id;
+            const existing = duplicateMatch.existing;
+            const existingId = existing.id;
+            
+            // Smart merge: preserve existing fields if incoming CSV fields are empty/blank
+            const mergedIncomingStudent: Student = {
+              ...existing,
+              ...parsedStudent,
+              id: existingId,
+              schoolId: existing.schoolId || parsedStudent.schoolId,
+              name: parsedStudent.name || existing.name,
+              grade: parsedStudent.grade || existing.grade,
+              srNo: parsedStudent.srNo || existing.srNo,
+              admissionNo: parsedStudent.admissionNo || existing.admissionNo,
+              fatherName: parsedStudent.fatherName || existing.fatherName,
+              motherName: parsedStudent.motherName || existing.motherName,
+              mobile: parsedStudent.mobile || existing.mobile,
+              address: parsedStudent.address || existing.address,
+              aadhar: parsedStudent.aadhar || existing.aadhar,
+              email: parsedStudent.email || existing.email,
+              gender: parsedStudent.gender || existing.gender,
+              dob: parsedStudent.dob || existing.dob,
+              rollNo: parsedStudent.rollNo || existing.rollNo,
+              academicSession: parsedStudent.academicSession || existing.academicSession,
+              stream: parsedStudent.stream || existing.stream,
+              previousClass: parsedStudent.previousClass || existing.previousClass,
+              feeBalance: parsedStudent.feeBalance !== undefined && !isNaN(parsedStudent.feeBalance) ? parsedStudent.feeBalance : existing.feeBalance,
+              subjects: parsedStudent.subjects && parsedStudent.subjects.length > 0 ? parsedStudent.subjects : (existing.subjects || getDefaultSubjectsForGrade(existing.grade)),
+              photoUrl: parsedStudent.photoUrl || existing.photoUrl,
+              isDeleted: false
+            };
+
             duplicateItems.push({
-              incomingStudent: {
-                ...parsedStudent,
-                id: existingId, // Preserve original student ID for seamless updates
-                subjects: parsedStudent.subjects && parsedStudent.subjects.length > 0 ? parsedStudent.subjects : (duplicateMatch.existing.subjects || getDefaultSubjectsForGrade(duplicateMatch.existing.grade))
-              },
-              existingStudent: duplicateMatch.existing,
+              incomingStudent: mergedIncomingStudent,
+              existingStudent: existing,
               marks: rowMarks.map(m => ({ ...m, studentId: existingId })),
               matchReason: duplicateMatch.reason
             });
