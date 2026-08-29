@@ -12,45 +12,58 @@ export const ReportCardStyles: React.FC<ReportCardStylesProps> = ({ isLandscape,
         @media print {
           @page { 
             size: ${isLandscape ? 'A4 landscape' : 'A4 portrait'}; 
-            margin: 3mm; 
+            margin: 3.5mm; 
           }
           html, body {
             background: white !important;
             color: black !important;
             margin: 0 !important;
             padding: 0 !important;
+            width: 100% !important;
             height: 100% !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
           
-          .print-container {
+          .print-card-wrapper {
+            width: 100% !important;
+            height: ${isLandscape ? '203mm' : '290mm'} !important;
+            min-height: ${isLandscape ? '203mm' : '290mm'} !important;
+            max-height: ${isLandscape ? '203mm' : '290mm'} !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            page-break-after: always !important;
+            break-after: page !important;
+            display: flex !important;
+            flex-direction: column !important;
+            box-sizing: border-box !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: none !important;
+            background: transparent !important;
+            overflow: hidden !important;
+          }
+
+          .print-container, 
+          .report-card-container, 
+          .traditional-border {
             position: relative !important;
             background: white !important;
             width: 100% !important;
             max-width: 100% !important;
-            height: auto !important;
-            max-height: ${isLandscape ? '200mm' : '288mm'} !important;
+            height: ${isLandscape ? '202mm' : '289mm'} !important;
+            min-height: ${isLandscape ? '202mm' : '289mm'} !important;
+            max-height: ${isLandscape ? '202mm' : '289mm'} !important;
             box-sizing: border-box !important;
             border: 5px double var(--rc-color, #002060) !important;
             border-radius: 0 !important;
             box-shadow: none !important;
-            padding: ${isLandscape ? '3mm 4mm' : '4mm 5mm'} !important;
+            padding: ${isLandscape ? '2.5mm 3.5mm' : '3mm 4mm'} !important;
             margin: 0 auto !important;
             overflow: hidden !important;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-          }
-
-          .traditional-border {
-            border: 5px double var(--rc-color, #002060) !important;
-            padding: ${isLandscape ? '3mm 4mm' : '4mm 5mm'} !important;
-            margin: 0 auto !important;
-            box-shadow: none !important;
-            border-radius: 0 !important;
-            box-sizing: border-box !important;
-            width: 100% !important;
-            height: auto !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: space-between !important;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
           }

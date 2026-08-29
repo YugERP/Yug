@@ -28,63 +28,66 @@ export const ClassicPortraitTemplate: React.FC<ReportCardCommonProps> = ({
   const dyn = getDynamicScaling(subCount, false);
 
   return (
-    <>
-      {/* Header section with UDISE */}
-      <div className="flex justify-end items-center font-serif text-[10px] font-black text-[#CC0000] uppercase tracking-wider mb-0.5">
-        <div>UDISE CODE-{currentSchool?.udiseCode || '09040803605'}</div>
-      </div>
-
-      {/* School Logo, Name & Address */}
-      <div className="flex items-center justify-center gap-3 mb-1.5">
-        {currentSchool?.logo && (
-          <img 
-            src={currentSchool.logo} 
-            alt="School Logo" 
-            className="w-14 h-14 sm:w-16 sm:h-16 object-contain shrink-0" 
-            referrerPolicy="no-referrer"
-          />
-        )}
-        <div className="text-center flex-1">
-          <h1 
-            style={getSchoolNameStyle(currentSchool?.name || 'HARDEV SINGH S.S.N.Jr.HIGH SCHOOL', false, subCount)}
-            className="font-black text-[#002060] font-serif uppercase tracking-wide leading-tight"
-          >
-            {currentSchool?.name || 'HARDEV SINGH S.S.N.Jr.HIGH SCHOOL'}
-          </h1>
-          <p 
-            style={getAddressStyle(currentSchool?.address || 'MILAK BHOLA SINGH SONAKPUR MORADABAD-244001', false, subCount)}
-            className="font-bold text-[#002060] uppercase tracking-widest mt-0.5"
-          >
-            {currentSchool?.address || 'MILAK BHOLA SINGH SONAKPUR MORADABAD-244001'}
-          </p>
-          <p className="font-bold text-[#002060] text-[8.5px] sm:text-[9.5px] uppercase tracking-wider mt-0.5">
-            Contact No: {currentSchool?.mobile || '9411833501, 8057283623'}
-            {currentSchool?.altMobile ? `, ${currentSchool.altMobile}` : ''}
-          </p>
+    <div className="flex flex-col justify-between h-full w-full flex-1">
+      {/* Top Header Block */}
+      <div className="shrink-0">
+        {/* Header section with UDISE */}
+        <div className="flex justify-end items-center font-serif text-[10px] font-black text-[#CC0000] uppercase tracking-wider mb-0.5">
+          <div>UDISE CODE-{currentSchool?.udiseCode || '09040803605'}</div>
         </div>
-        {currentSchool?.logo && <div className="w-14 h-14 sm:w-16 sm:h-16 shrink-0 hidden sm:block"></div>}
-      </div>
 
-      {/* Double decorative horizontal header separator */}
-      <div className="border-t-2 border-[#002060] py-0.5 my-1"></div>
-
-      {/* REPORT CARD Pill */}
-      <div className="text-center my-1">
-        <div className="px-5 py-0.5 bg-[#002060] text-white rounded border-2 border-double border-white font-serif text-[13px] sm:text-[14px] font-black tracking-widest uppercase inline-block shadow-sm">
-          REPORT CARD
+        {/* School Logo, Name & Address */}
+        <div className="flex items-center justify-center gap-3 mb-1.5">
+          {currentSchool?.logo && (
+            <img 
+              src={currentSchool.logo} 
+              alt="School Logo" 
+              className="w-14 h-14 sm:w-16 sm:h-16 object-contain shrink-0" 
+              referrerPolicy="no-referrer"
+            />
+          )}
+          <div className="text-center flex-1">
+            <h1 
+              style={getSchoolNameStyle(currentSchool?.name || 'HARDEV SINGH S.S.N.Jr.HIGH SCHOOL', false, subCount)}
+              className="font-black text-[#002060] font-serif uppercase tracking-wide leading-tight"
+            >
+              {currentSchool?.name || 'HARDEV SINGH S.S.N.Jr.HIGH SCHOOL'}
+            </h1>
+            <p 
+              style={getAddressStyle(currentSchool?.address || 'MILAK BHOLA SINGH SONAKPUR MORADABAD-244001', false, subCount)}
+              className="font-bold text-[#002060] uppercase tracking-widest mt-0.5"
+            >
+              {currentSchool?.address || 'MILAK BHOLA SINGH SONAKPUR MORADABAD-244001'}
+            </p>
+            <p className="font-bold text-[#002060] text-[8.5px] sm:text-[9.5px] uppercase tracking-wider mt-0.5">
+              Contact No: {currentSchool?.mobile || '9411833501, 8057283623'}
+              {currentSchool?.altMobile ? `, ${currentSchool.altMobile}` : ''}
+            </p>
+          </div>
+          {currentSchool?.logo && <div className="w-14 h-14 sm:w-16 sm:h-16 shrink-0 hidden sm:block"></div>}
         </div>
+
+        {/* Double decorative horizontal header separator */}
+        <div className="border-t-2 border-[#002060] py-0.5 my-1"></div>
+
+        {/* REPORT CARD Pill */}
+        <div className="text-center my-1">
+          <div className="px-5 py-0.5 bg-[#002060] text-white rounded border-2 border-double border-white font-serif text-[13px] sm:text-[14px] font-black tracking-widest uppercase inline-block shadow-sm">
+            REPORT CARD
+          </div>
+        </div>
+
+        {/* Session Text */}
+        <p className="text-center font-serif text-[#002060] text-[10px] sm:text-[11px] font-extrabold tracking-widest uppercase mb-1.5">
+          ACADEMIC SESSION {sessionToUse}
+        </p>
+
+        {/* Decorative bottom line */}
+        <div className="border-b border-[#002060] mb-2"></div>
       </div>
-
-      {/* Session Text */}
-      <p className="text-center font-serif text-[#002060] text-[10px] sm:text-[11px] font-extrabold tracking-widest uppercase mb-2">
-        ACADEMIC SESSION {sessionToUse}
-      </p>
-
-      {/* Decorative bottom lines */}
-      <div className="border-b border-[#002060] mb-2"></div>
 
       {/* Student metadata + passport photo container */}
-      <div className={`flex flex-row gap-4 items-start justify-between mb-2`}>
+      <div className="shrink-0 flex flex-row gap-4 items-start justify-between mb-2">
         <div className={`flex-1 grid grid-cols-2 gap-x-6 ${dyn.studentInfoGap} ${dyn.studentInfoText} text-slate-900 font-serif w-full`}>
           <div className="flex items-baseline">
             <span className="font-bold text-[#002060] w-24 shrink-0">Admn.No</span>
@@ -144,7 +147,7 @@ export const ClassicPortraitTemplate: React.FC<ReportCardCommonProps> = ({
       </div>
 
       {/* Subjects & Marks Grid table (No horizontal scrollbars, exact 100% table-fixed layout) */}
-      <div className="w-full my-2">
+      <div className="w-full flex-1 flex flex-col justify-center my-1">
         <table className={`w-full table-fixed border-2 border-[#002060] text-center ${dyn.tableText} font-serif border-collapse`}>
           <thead>
             <tr className="border-b-2 border-[#002060] bg-slate-50">
@@ -219,90 +222,93 @@ export const ClassicPortraitTemplate: React.FC<ReportCardCommonProps> = ({
         </table>
       </div>
 
-      {/* Results summary 2-column grid */}
-      <div className={`grid grid-cols-2 gap-x-8 ${dyn.summarySpace} ${dyn.summaryText} text-slate-900 my-2 pt-0.5 font-serif`}>
-        <div className={dyn.summarySpace}>
-          <div className="flex">
-            <span className="font-bold text-[#002060] w-24 shrink-0">RESULT</span>
-            <span className={`font-extrabold ${passed ? 'text-emerald-800' : 'text-red-800'}`}>: {passed ? 'PASSED' : 'FAILED'}</span>
+      {/* Bottom Summary, Signatures & Instructions Block */}
+      <div className="shrink-0 flex flex-col justify-end">
+        {/* Results summary 2-column grid */}
+        <div className={`grid grid-cols-2 gap-x-8 ${dyn.summarySpace} ${dyn.summaryText} text-slate-900 my-1 pt-0.5 font-serif`}>
+          <div className={dyn.summarySpace}>
+            <div className="flex">
+              <span className="font-bold text-[#002060] w-24 shrink-0">RESULT</span>
+              <span className={`font-extrabold ${passed ? 'text-emerald-800' : 'text-red-800'}`}>: {passed ? 'PASSED' : 'FAILED'}</span>
+            </div>
+            <div className="flex">
+              <span className="font-bold text-[#002060] w-24 shrink-0">PERCENTAGE</span>
+              <span className="font-extrabold">: {overallPercentage.toFixed(2)}%</span>
+            </div>
+            <div className="flex">
+              <span className="font-bold text-[#002060] w-24 shrink-0">GRADE</span>
+              <span className="font-extrabold">: {overallGrade}</span>
+            </div>
+            <div className="flex">
+              <span className="font-bold text-[#002060] w-24 shrink-0">RANK</span>
+              <span className="font-extrabold">: {rank}</span>
+            </div>
           </div>
-          <div className="flex">
-            <span className="font-bold text-[#002060] w-24 shrink-0">PERCENTAGE</span>
-            <span className="font-extrabold">: {overallPercentage.toFixed(2)}%</span>
-          </div>
-          <div className="flex">
-            <span className="font-bold text-[#002060] w-24 shrink-0">GRADE</span>
-            <span className="font-extrabold">: {overallGrade}</span>
-          </div>
-          <div className="flex">
-            <span className="font-bold text-[#002060] w-24 shrink-0">RANK</span>
-            <span className="font-extrabold">: {rank}</span>
+          <div className={dyn.summarySpace}>
+            <div className="flex">
+              <span className="font-bold text-[#002060] w-24 shrink-0">REMARK</span>
+              <span className="font-extrabold uppercase truncate" title={remark}>: {remark}</span>
+            </div>
+            <div className="flex">
+              <span className="font-bold text-[#002060] w-24 shrink-0">ATTENDANCE</span>
+              <span className="font-extrabold">: {attendanceString}</span>
+            </div>
+            <div className="flex">
+              <span className="font-bold text-[#002060] w-24 shrink-0">DATE</span>
+              <span className="font-extrabold">: {new Date().toLocaleDateString('en-GB')}</span>
+            </div>
           </div>
         </div>
-        <div className={dyn.summarySpace}>
-          <div className="flex">
-            <span className="font-bold text-[#002060] w-24 shrink-0">REMARK</span>
-            <span className="font-extrabold uppercase truncate" title={remark}>: {remark}</span>
-          </div>
-          <div className="flex">
-            <span className="font-bold text-[#002060] w-24 shrink-0">ATTENDANCE</span>
-            <span className="font-extrabold">: {attendanceString}</span>
-          </div>
-          <div className="flex">
-            <span className="font-bold text-[#002060] w-24 shrink-0">DATE</span>
-            <span className="font-extrabold">: {new Date().toLocaleDateString('en-GB')}</span>
-          </div>
-        </div>
-      </div>
 
-      {/* Signatures Row */}
-      <div className={`flex justify-between items-center ${dyn.signatureMargin} px-8 text-center text-[10px] font-black text-[#002060]`}>
-        <div className="flex flex-col items-center">
-          <div className={dyn.signatureGap}></div>
-          <span className="border-t border-[#002060] pt-0.5 px-4 uppercase tracking-wider text-[8.5px]">CLASS TEACHER</span>
+        {/* Signatures Row */}
+        <div className={`flex justify-between items-center ${dyn.signatureMargin} px-8 text-center text-[10px] font-black text-[#002060]`}>
+          <div className="flex flex-col items-center">
+            <div className={dyn.signatureGap}></div>
+            <span className="border-t border-[#002060] pt-0.5 px-4 uppercase tracking-wider text-[8.5px]">CLASS TEACHER</span>
+          </div>
+          <div className="flex flex-col items-center">
+            <div className={dyn.signatureGap}></div>
+            <span className="border-t border-[#002060] pt-0.5 px-4 uppercase tracking-wider text-[8.5px]">PRINCIPAL</span>
+          </div>
         </div>
-        <div className="flex flex-col items-center">
-          <div className={dyn.signatureGap}></div>
-          <span className="border-t border-[#002060] pt-0.5 px-4 uppercase tracking-wider text-[8.5px]">PRINCIPAL</span>
-        </div>
-      </div>
 
-      {/* Grading Scale instruction footers */}
-      <div className="border-t border-dashed border-[#002060] pt-1 mt-1">
-        <p className="text-center font-bold text-[8.5px] text-[#002060] uppercase tracking-wider mb-0.5">Instructions</p>
-        <p className={`text-slate-600 font-semibold mb-0.5 text-center ${dyn.instructionsText}`}>
-          GRADING SCALE FOR SCHOLASTIC AREAS : Grade are awarded on 8-point grading scale as follows
-        </p>
-        
-        <table className={`w-full text-center border border-[#002060] ${dyn.gradingScaleText} font-serif border-collapse`}>
-          <thead>
-            <tr className="bg-slate-50 font-bold border-b border-[#002060] text-slate-700">
-              <td className="border-r border-[#002060] p-0.5 font-semibold uppercase text-slate-500">PERCENTAGE RANGE</td>
-              <td className="border-r border-[#002060] p-0.5">91%-100%</td>
-              <td className="border-r border-[#002060] p-0.5">81%-90%</td>
-              <td className="border-r border-[#002060] p-0.5">71%-80%</td>
-              <td className="border-r border-[#002060] p-0.5">61%-70%</td>
-              <td className="border-r border-[#002060] p-0.5">51%-60%</td>
-              <td className="border-r border-[#002060] p-0.5">41%-50%</td>
-              <td className="border-r border-[#002060] p-0.5">33%-40%</td>
-              <td className="p-0.5">32% & BELOW</td>
-            </tr>
-          </thead>
-          <tbody>
-            <tr className="font-extrabold text-[#002060]">
-              <td className="border-r border-[#002060] p-0.5 font-bold text-slate-500">GRADE</td>
-              <td className="border-r border-[#002060] p-0.5 bg-indigo-50/10">A1</td>
-              <td className="border-r border-[#002060] p-0.5 bg-indigo-50/10">A2</td>
-              <td className="border-r border-[#002060] p-0.5 bg-indigo-50/10">B1</td>
-              <td className="border-r border-[#002060] p-0.5 bg-indigo-50/10">B2</td>
-              <td className="border-r border-[#002060] p-0.5 bg-indigo-50/10">C1</td>
-              <td className="border-r border-[#002060] p-0.5 bg-indigo-50/10">C2</td>
-              <td className="border-r border-[#002060] p-0.5 bg-indigo-50/10">D</td>
-              <td className="p-0.5 bg-indigo-50/10">E</td>
-            </tr>
-          </tbody>
-        </table>
+        {/* Grading Scale instruction footers */}
+        <div className="border-t border-dashed border-[#002060] pt-1 mt-1">
+          <p className="text-center font-bold text-[8.5px] text-[#002060] uppercase tracking-wider mb-0.5">Instructions</p>
+          <p className={`text-slate-600 font-semibold mb-0.5 text-center ${dyn.instructionsText}`}>
+            GRADING SCALE FOR SCHOLASTIC AREAS : Grade are awarded on 8-point grading scale as follows
+          </p>
+          
+          <table className={`w-full text-center border border-[#002060] ${dyn.gradingScaleText} font-serif border-collapse`}>
+            <thead>
+              <tr className="bg-slate-50 font-bold border-b border-[#002060] text-slate-700">
+                <td className="border-r border-[#002060] p-0.5 font-semibold uppercase text-slate-500">PERCENTAGE RANGE</td>
+                <td className="border-r border-[#002060] p-0.5">91%-100%</td>
+                <td className="border-r border-[#002060] p-0.5">81%-90%</td>
+                <td className="border-r border-[#002060] p-0.5">71%-80%</td>
+                <td className="border-r border-[#002060] p-0.5">61%-70%</td>
+                <td className="border-r border-[#002060] p-0.5">51%-60%</td>
+                <td className="border-r border-[#002060] p-0.5">41%-50%</td>
+                <td className="border-r border-[#002060] p-0.5">33%-40%</td>
+                <td className="p-0.5">32% & BELOW</td>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="font-extrabold text-[#002060]">
+                <td className="border-r border-[#002060] p-0.5 font-bold text-slate-500">GRADE</td>
+                <td className="border-r border-[#002060] p-0.5 bg-indigo-50/10">A1</td>
+                <td className="border-r border-[#002060] p-0.5 bg-indigo-50/10">A2</td>
+                <td className="border-r border-[#002060] p-0.5 bg-indigo-50/10">B1</td>
+                <td className="border-r border-[#002060] p-0.5 bg-indigo-50/10">B2</td>
+                <td className="border-r border-[#002060] p-0.5 bg-indigo-50/10">C1</td>
+                <td className="border-r border-[#002060] p-0.5 bg-indigo-50/10">C2</td>
+                <td className="border-r border-[#002060] p-0.5 bg-indigo-50/10">D</td>
+                <td className="p-0.5 bg-indigo-50/10">E</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
-    </>
+    </div>
   );
 };

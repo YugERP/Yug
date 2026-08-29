@@ -5,6 +5,7 @@ import { type Student, type ExamMark } from '../../types';
 import { Printer, Search, Award, FileText, ChevronRight, Eye } from 'lucide-react';
 import { isSameGrade, normalizeGrade, ALL_STANDARD_CLASSES, isSameSubject, isValidPhotoUrl, isPracticalSubject, isNurseryOrKg } from '../../utils/gradeHelper';
 import { type SubjectRowData } from '../reportCard/types';
+import { ReportCardStyles } from '../reportCard/ReportCardStyles';
 import { ClassicPortraitTemplate } from '../reportCard/ClassicPortraitTemplate';
 import { LandscapeProTemplate } from '../reportCard/LandscapeProTemplate';
 import { NurseryKgPortraitTemplate } from '../reportCard/NurseryKgPortraitTemplate';
@@ -312,128 +313,7 @@ export function BulkResultsPrinter() {
 
   return (
     <div className="space-y-6">
-      {/* Page break CSS inject */}
-      <style dangerouslySetInnerHTML={{__html: `
-        @media print {
-          @page {
-            size: ${isLandscape ? 'A4 landscape' : 'A4 portrait'};
-            margin: 3mm;
-          }
-          html, body {
-            background: white !important;
-            color: black !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            height: 100% !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-          
-          #printable-bulk-results {
-            position: relative !important;
-            width: 100% !important;
-            max-width: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            background: white !important;
-            --rc-color: ${brandColor} !important;
-          }
- 
-          .no-print {
-            display: none !important;
-          }
- 
-          .print-card-wrapper {
-            page-break-after: always !important;
-            break-after: page !important;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            box-sizing: border-box !important;
-            width: 100% !important;
-            height: 100% !important;
-            max-height: ${isLandscape ? '200mm' : '288mm'} !important;
-            position: relative !important;
-            overflow: hidden !important;
-          }
-          
-          .print-container {
-            border: 5px double var(--rc-color, #002060) !important;
-            border-radius: 0 !important;
-            box-shadow: none !important;
-            padding: ${isLandscape ? '3mm 4mm' : '4mm 5mm'} !important;
-            background: white !important;
-            box-sizing: border-box !important;
-            width: 100% !important;
-            height: auto !important;
-            max-height: ${isLandscape ? '200mm' : '288mm'} !important;
-            margin: 0 auto !important;
-            position: relative !important;
-            overflow: hidden !important;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-          }
- 
-          .traditional-border {
-            border: 5px double var(--rc-color, #002060) !important;
-            border-radius: 0 !important;
-            box-shadow: none !important;
-            padding: ${isLandscape ? '3mm 4mm' : '4mm 5mm'} !important;
-            box-sizing: border-box !important;
-            width: 100% !important;
-            height: auto !important;
-            margin: 0 auto !important;
-            overflow: hidden !important;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-          }
-          
-          .print-card-wrapper:last-child {
-            page-break-after: avoid !important;
-            break-after: avoid !important;
-          }
- 
-          * {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-            box-shadow: none !important;
-          }
-        }
-
-        .report-card-container .text-\\[\\#002060\\] {
-          color: var(--rc-color, #002060) !important;
-        }
-        .report-card-container .border-\\[\\#002060\\] {
-          border-color: var(--rc-color, #002060) !important;
-        }
-        .report-card-container .bg-\\[\\#002060\\] {
-          background-color: var(--rc-color, #002060) !important;
-        }
-        .report-card-container .divide-\\[\\#002060\\] > * + * {
-          border-color: var(--rc-color, #002060) !important;
-        }
-        .report-card-container .border-t-\\[\\#002060\\] {
-          border-top-color: var(--rc-color, #002060) !important;
-        }
-        .report-card-container .border-b-\\[\\#002060\\] {
-          border-bottom-color: var(--rc-color, #002060) !important;
-        }
-        .report-card-container .border-r-\\[\\#002060\\] {
-          border-right-color: var(--rc-color, #002060) !important;
-        }
-        .report-card-container .border-l-\\[\\#002060\\] {
-          border-left-color: var(--rc-color, #002060) !important;
-        }
-        .report-card-container.traditional-border, 
-        .report-card-container .traditional-border {
-          border: 5px double var(--rc-color, #002060) !important;
-        }
-        .report-card-container.print-container,
-        .report-card-container .print-container {
-          border-color: var(--rc-color, #002060) !important;
-        }
-      `}} />
+      <ReportCardStyles isLandscape={isLandscape} brandColor={brandColor} />
 
       {/* Control Panel (Hidden when printing) */}
       <Card className="p-4 bg-slate-50 border border-slate-200 flex flex-wrap gap-4 items-end no-print">
