@@ -4,7 +4,7 @@ import { Card, Button, Label, Input } from '../UI';
 import { type Student, type School } from '../../types';
 import { Printer, Search, CreditCard, LayoutTemplate, Users, User } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
-import { isSameGrade, normalizeGrade, ALL_STANDARD_CLASSES } from '../../utils/gradeHelper';
+import { isSameGrade, normalizeGrade, ALL_STANDARD_CLASSES, isValidPhotoUrl } from '../../utils/gradeHelper';
 
 // ---------------------------------------------------------
 // TEMPLATES
@@ -25,10 +25,15 @@ const ClassicDuoCard = ({ student, school }: { student: Student; school?: School
       </div>
 
       <div className="flex flex-col items-center justify-center space-y-1.5 z-10 flex-1 my-2">
-        {student.docStudentPhoto || student.photoUrl ? (
-          <img src={student.docStudentPhoto || student.photoUrl} alt="Photo" className="w-[62px] h-[75px] object-cover border-2 border-indigo-400 rounded-lg shadow-md" />
+        {isValidPhotoUrl(student.docStudentPhoto || student.photoUrl) ? (
+          <img 
+            src={(isValidPhotoUrl(student.docStudentPhoto) ? student.docStudentPhoto : student.photoUrl) || ''} 
+            alt="" 
+            className="w-[62px] h-[75px] object-cover border-2 border-indigo-400 rounded-lg shadow-md" 
+            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+          />
         ) : (
-          <div className="w-[62px] h-[75px] bg-slate-800 rounded-lg border-2 border-dashed border-indigo-500/40 flex items-center justify-center text-[8px] text-indigo-300 font-medium">Pic</div>
+          <div className="w-[62px] h-[75px] bg-slate-800 rounded-lg border-2 border-dashed border-indigo-500/40 flex items-center justify-center text-[8px] text-indigo-300 font-medium select-none">Pic</div>
         )}
 
         <div className="text-center space-y-0.5">
@@ -125,10 +130,15 @@ const ModernBlueCard = ({ student, school }: { student: Student; school?: School
     <div className="z-10 mt-[2mm] flex justify-center shrink-0">
       <div className="w-[26mm] h-[26mm] rounded-full bg-white p-[2px] shadow-sm">
         <div className="w-full h-full rounded-full overflow-hidden bg-slate-200 flex items-center justify-center">
-          {student.docStudentPhoto || student.photoUrl ? (
-            <img src={student.docStudentPhoto || student.photoUrl} alt="Photo" className="w-full h-full object-cover" />
+          {isValidPhotoUrl(student.docStudentPhoto || student.photoUrl) ? (
+            <img 
+              src={(isValidPhotoUrl(student.docStudentPhoto) ? student.docStudentPhoto : student.photoUrl) || ''} 
+              alt="" 
+              className="w-full h-full object-cover" 
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+            />
           ) : (
-            <span className="text-[10px] text-slate-400 font-medium">Pic</span>
+            <span className="text-[10px] text-slate-400 font-medium select-none">Pic</span>
           )}
         </div>
       </div>

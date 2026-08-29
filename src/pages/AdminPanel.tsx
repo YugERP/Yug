@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import type { Student, Teacher, User, ExamMark } from '../types';
 import { StudentReportCard } from '../components/StudentReportCard';
-import { normalizeGrade, isSameGrade, getDefaultSubjectsForGrade, parseExamHeader, normalizeSubject, isSameSubject } from '../utils/gradeHelper';
+import { normalizeGrade, isSameGrade, getDefaultSubjectsForGrade, parseExamHeader, normalizeSubject, isSameSubject, isValidPhotoUrl } from '../utils/gradeHelper';
 
 // ERP modular components import
 import { StudentRegistration } from '../components/erp/StudentRegistration';
@@ -175,11 +175,35 @@ export function AdminPanel() {
 
     const header = [...baseHeader, ...dynamicHeaders];
     
+    const escapeCsv = (val: any) => {
+      if (val === undefined || val === null) return '""';
+      const str = String(val);
+      return `"${str.replace(/"/g, '""')}"`;
+    };
+
     const rows = students.map(s => {
       const fullAddress = s.address || [s.presentVillageMohalla, s.presentPostOffice, s.presentDistrict, s.presentState, s.presentPinCode].filter(Boolean).join(', ') || '';
+      const photoVal = isValidPhotoUrl(s.photoUrl) ? s.photoUrl : (isValidPhotoUrl(s.docStudentPhoto) ? s.docStudentPhoto : '');
       const sBase = [
-        s.srNo || '', s.admissionNo || '', s.name, s.gender||'', s.fatherName||'', s.motherName||'', s.dob||'', s.mobile||'', s.aadhar||'', s.email||'', `"${fullAddress}"`,
-        s.grade, s.rollNo, s.academicSession||'', s.previousClass||'', s.stream||'', s.password||'', s.feeBalance, s.photoUrl || ''
+        escapeCsv(s.srNo || ''),
+        escapeCsv(s.admissionNo || ''),
+        escapeCsv(s.name),
+        escapeCsv(s.gender || ''),
+        escapeCsv(s.fatherName || ''),
+        escapeCsv(s.motherName || ''),
+        escapeCsv(s.dob || ''),
+        escapeCsv(s.mobile || ''),
+        escapeCsv(s.aadhar || ''),
+        escapeCsv(s.email || ''),
+        escapeCsv(fullAddress),
+        escapeCsv(s.grade),
+        escapeCsv(s.rollNo),
+        escapeCsv(s.academicSession || ''),
+        escapeCsv(s.previousClass || ''),
+        escapeCsv(s.stream || ''),
+        escapeCsv(s.password || ''),
+        escapeCsv(s.feeBalance !== undefined && !isNaN(s.feeBalance) ? s.feeBalance : 0),
+        escapeCsv(photoVal || '')
       ];
 
       const sMarks = dynamicExamCols.flatMap(col => {
@@ -367,7 +391,12 @@ export function AdminPanel() {
             stream: rawStream as any,
             password: getCol(cols, ['password', 'pwd'], 16) || 'password123',
             feeBalance: Number(getCol(cols, ['feebalance', 'fee_balance', 'dues', 'balance'], 17) || 0),
-            photoUrl: getCol(cols, ['photourl', 'photo', 'photolink', 'image', 'picture'], 18) || undefined,
+            photoUrl: (() => {
+              const rawP = getCol(cols, ['photourl', 'photo', 'photolink', 'image', 'picture', 'docstudentphoto', 'studentphoto']);
+              if (isValidPhotoUrl(rawP)) return rawP.trim();
+              if (cols[18] && isValidPhotoUrl(cols[18])) return cols[18].trim();
+              return '';
+            })(),
             subjects: getDefaultSubjectsForGrade(normalizedGrade, rawStream),
             isDeleted: false
           };
@@ -445,7 +474,7 @@ export function AdminPanel() {
               previousClass: parsedStudent.previousClass || existing.previousClass,
               feeBalance: parsedStudent.feeBalance !== undefined && !isNaN(parsedStudent.feeBalance) ? parsedStudent.feeBalance : existing.feeBalance,
               subjects: parsedStudent.subjects && parsedStudent.subjects.length > 0 ? parsedStudent.subjects : (existing.subjects || getDefaultSubjectsForGrade(existing.grade)),
-              photoUrl: parsedStudent.photoUrl || existing.photoUrl,
+              photoUrl: parsedStudent.photoUrl || (isValidPhotoUrl(existing.photoUrl) ? existing.photoUrl : (isValidPhotoUrl(existing.docStudentPhoto) ? existing.docStudentPhoto : '')) || '',
               isDeleted: false
             };
 
@@ -1047,8 +1076,13 @@ export function AdminPanel() {
                       ) : filteredDirectoryStudents.map(st => (
                         <tr key={st.id} className="hover:bg-slate-50">
                           <td className="px-4 py-2">
-                            {st.docStudentPhoto || st.photoUrl ? (
-                              <img src={st.docStudentPhoto || st.photoUrl} alt="Pic" className="w-[32px] h-[32px] rounded-lg object-cover border" />
+                            {isValidPhotoUrl(st.docStudentPhoto || st.photoUrl) ? (
+                              <img 
+                                src={(isValidPhotoUrl(st.docStudentPhoto) ? st.docStudentPhoto : st.photoUrl) || ''} 
+                                alt="" 
+                                className="w-[32px] h-[32px] rounded-lg object-cover border" 
+                                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                              />
                             ) : (
                               <div className="w-[32px] h-[32px] rounded-lg bg-slate-100 flex items-center justify-center text-[8px] text-slate-400">Empty</div>
                             )}

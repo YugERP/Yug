@@ -4,7 +4,7 @@ import { type Student, type ExamMark, type ExamType } from '../types';
 import { Card, Button, Label } from './UI';
 import { Printer, Upload, RefreshCw, Award, BookOpen, CheckCircle, AlertCircle, FileText, X, Download, BarChart2, Eye } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { isSameGrade, isSameSubject } from '../utils/gradeHelper';
+import { isSameGrade, isSameSubject, isValidPhotoUrl } from '../utils/gradeHelper';
 
 const getSchoolNameStyle = (name: string, template: 'classic_portrait' | 'landscape_new') => {
   const len = name.length;
@@ -90,6 +90,9 @@ export function StudentReportCard({ student, onClose, allowEditPhoto = true }: S
   const [selectedTemplate, setSelectedTemplate] = useState<'classic_portrait' | 'landscape_new'>(
     student.reportCardTemplate || 'classic_portrait'
   );
+  const [photoLoadError, setPhotoLoadError] = useState(false);
+
+  const activePhoto = isValidPhotoUrl(student.photoUrl) ? student.photoUrl : (isValidPhotoUrl(student.docStudentPhoto) ? student.docStudentPhoto : null);
 
   // School details
   const currentSchool = schools.find(school => school.id === currentUser?.schoolId);
@@ -274,6 +277,7 @@ export function StudentReportCard({ student, onClose, allowEditPhoto = true }: S
     reader.onloadend = () => {
       const base64Str = reader.result as string;
       updateStudent(student.id, { photoUrl: base64Str });
+      setPhotoLoadError(false);
       setPhotoUploading(false);
     };
     reader.onerror = () => {
@@ -702,10 +706,15 @@ export function StudentReportCard({ student, onClose, allowEditPhoto = true }: S
                   
                   {/* Passport photo box */}
                   <div className="relative w-20 h-24 border border-dashed border-[#002060] rounded flex items-center justify-center text-center bg-slate-50 overflow-hidden shrink-0 shadow-inner group">
-                    {student.photoUrl ? (
-                      <img src={student.photoUrl} alt={student.name} className="w-full h-full object-cover" />
+                    {activePhoto && !photoLoadError ? (
+                      <img 
+                        src={activePhoto} 
+                        alt="" 
+                        className="w-full h-full object-cover" 
+                        onError={() => setPhotoLoadError(true)} 
+                      />
                     ) : (
-                      <div className="text-[7.5px] uppercase font-bold text-slate-400 p-1 font-serif leading-tight">Passport Photo</div>
+                      <div className="text-[7.5px] uppercase font-bold text-slate-400 p-1 font-serif leading-tight select-none">Passport Photo</div>
                     )}
                     {allowEditPhoto && (
                       <button 
@@ -961,10 +970,15 @@ export function StudentReportCard({ student, onClose, allowEditPhoto = true }: S
                   {/* Passport photo box */}
                   <div className="col-span-2 flex justify-end items-center">
                     <div className="relative w-14 h-18 border border-dashed border-[#002060] rounded flex items-center justify-center text-center bg-white overflow-hidden shrink-0 shadow-inner group">
-                      {student.photoUrl ? (
-                        <img src={student.photoUrl} alt={student.name} className="w-full h-full object-cover" />
+                      {activePhoto && !photoLoadError ? (
+                        <img 
+                          src={activePhoto} 
+                          alt="" 
+                          className="w-full h-full object-cover" 
+                          onError={() => setPhotoLoadError(true)} 
+                        />
                       ) : (
-                        <div className="text-[6.5px] uppercase font-bold text-slate-400 p-1 font-serif leading-tight">Passport Photo</div>
+                        <div className="text-[6.5px] uppercase font-bold text-slate-400 p-1 font-serif leading-tight select-none">Passport Photo</div>
                       )}
                       {allowEditPhoto && (
                         <button 

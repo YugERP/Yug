@@ -3,7 +3,7 @@ import { useStore } from '../../store';
 import { Card, Button, Label, Input } from '../UI';
 import { type Student, type ExamMark } from '../../types';
 import { Printer, Search, Award, FileText, ChevronRight, Eye } from 'lucide-react';
-import { isSameGrade, normalizeGrade, ALL_STANDARD_CLASSES, isSameSubject } from '../../utils/gradeHelper';
+import { isSameGrade, normalizeGrade, ALL_STANDARD_CLASSES, isSameSubject, isValidPhotoUrl } from '../../utils/gradeHelper';
 
 const getSchoolNameStyle = (name: string, template: 'classic_portrait' | 'landscape_new') => {
   const len = name.length;
@@ -368,10 +368,15 @@ function ReportCardPrintSheet({ student, selectedTemplate = 'classic_portrait' }
             
             {/* Passport photo box */}
             <div className="w-16 h-20 border border-dashed border-[#002060] rounded flex items-center justify-center text-center bg-slate-50 overflow-hidden shrink-0 shadow-inner">
-              {student.photoUrl ? (
-                <img src={student.photoUrl} alt={student.name} className="w-full h-full object-cover" />
+              {isValidPhotoUrl(student.photoUrl || student.docStudentPhoto) ? (
+                <img 
+                  src={(isValidPhotoUrl(student.photoUrl) ? student.photoUrl : student.docStudentPhoto) || ''} 
+                  alt="" 
+                  className="w-full h-full object-cover" 
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                />
               ) : (
-                <div className="text-[7px] uppercase font-bold text-slate-400 p-1 leading-tight">Passport Photo</div>
+                <div className="text-[7px] uppercase font-bold text-slate-400 p-1 leading-tight select-none">Passport Photo</div>
               )}
             </div>
           </div>
@@ -617,10 +622,15 @@ function ReportCardPrintSheet({ student, selectedTemplate = 'classic_portrait' }
             </div>
             <div className="col-span-2 flex justify-end">
               <div className="relative group w-16 h-20 border border-dashed border-[#002060] rounded flex items-center justify-center text-center bg-slate-50 overflow-hidden shrink-0 shadow-inner">
-                {student.photoUrl ? (
-                  <img src={student.photoUrl} alt={student.name} className="w-full h-full object-cover" />
+                {isValidPhotoUrl(student.photoUrl || student.docStudentPhoto) ? (
+                  <img 
+                    src={(isValidPhotoUrl(student.photoUrl) ? student.photoUrl : student.docStudentPhoto) || ''} 
+                    alt="" 
+                    className="w-full h-full object-cover" 
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                  />
                 ) : (
-                  <div className="text-[7px] uppercase font-bold text-slate-400 p-1 leading-tight">Passport Photo</div>
+                  <div className="text-[7px] uppercase font-bold text-slate-400 p-1 leading-tight select-none">Passport Photo</div>
                 )}
               </div>
             </div>

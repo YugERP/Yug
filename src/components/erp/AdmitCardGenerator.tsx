@@ -3,7 +3,7 @@ import { useStore } from '../../store';
 import { Card, Button, Label, Input } from '../UI';
 import { Printer, Upload, Image as ImageIcon, Trash2, Info, CheckCircle2, Sliders, Eye, Sparkles, LayoutTemplate, Layers, AlertCircle } from 'lucide-react';
 import { type Student } from '../../types';
-import { normalizeGrade, isSameGrade, ALL_STANDARD_CLASSES } from '../../utils/gradeHelper';
+import { normalizeGrade, isSameGrade, ALL_STANDARD_CLASSES, isValidPhotoUrl } from '../../utils/gradeHelper';
 
 export function AdmitCardGenerator() {
   const { students, schools, currentUser, activeAcademicSession } = useStore();
@@ -340,16 +340,17 @@ export function AdmitCardGenerator() {
             {/* Photo & Signature Box */}
             <div className="w-20 print:w-20 flex flex-col items-center justify-start shrink-0">
               <div className="w-[72px] h-[88px] print:w-[64px] print:h-[78px] border-2 border-slate-900 flex items-center justify-center bg-white text-[10px] text-slate-400 overflow-hidden shrink-0 shadow-2xs">
-                {student.docStudentPhoto ? (
+                {isValidPhotoUrl(student.docStudentPhoto || student.photoUrl) ? (
                   <img 
-                    src={student.docStudentPhoto} 
-                    alt={student.name} 
+                    src={(isValidPhotoUrl(student.docStudentPhoto) ? student.docStudentPhoto : student.photoUrl) || ''} 
+                    alt="" 
                     className="w-full h-full object-cover" 
                     crossOrigin="anonymous" 
                     referrerPolicy="no-referrer" 
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
                   />
                 ) : (
-                  <div className="text-center p-1 text-[8px] font-bold text-slate-400 uppercase">
+                  <div className="text-center p-1 text-[8px] font-bold text-slate-400 uppercase select-none">
                     Affix Photo
                   </div>
                 )}

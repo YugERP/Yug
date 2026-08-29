@@ -247,3 +247,31 @@ export function parseExamHeader(headerName: string): { subject: string; examType
   const subject = normalizeSubject(subjectText);
   return { subject, examType, isMax };
 }
+
+/**
+ * Validates if a string is a valid image URL or base64 data URL.
+ * Prevents invalid numbers, undefined strings, or placeholder text from showing broken image icons.
+ */
+export function isValidPhotoUrl(url?: string | null): boolean {
+  if (!url || typeof url !== 'string') return false;
+  const trimmed = url.trim();
+  if (!trimmed) return false;
+  const lower = trimmed.toLowerCase();
+  if (['undefined', 'null', 'n/a', 'none', '-', 'false', '0', '""', "''", 'undefined undefined'].includes(lower)) return false;
+  // If it's a numeric string (like "75", "100", "0"), it's clearly a mark or roll number, not a photo!
+  if (/^\d+(\.\d+)?$/.test(trimmed)) return false;
+
+  // Data URLs
+  if (trimmed.startsWith('data:image/')) {
+    return trimmed.includes(';base64,') && trimmed.length > 50;
+  }
+  // Blobs & absolute/relative URLs
+  if (trimmed.startsWith('blob:') || trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return true;
+  }
+  // Local paths with image extensions
+  if (/\.(jpg|jpeg|png|webp|gif|svg|bmp|avif)(\?.*)?$/i.test(trimmed)) {
+    return true;
+  }
+  return false;
+}

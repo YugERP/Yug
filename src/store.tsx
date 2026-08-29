@@ -77,6 +77,36 @@ interface FirestoreErrorInfo {
   }
 }
 
+// Helper to sanitize any object and recursively strip undefined properties before Firestore operations
+export function cleanFirestoreData<T>(obj: T): T {
+  if (obj === null || obj === undefined) return obj;
+  if (Array.isArray(obj)) {
+    return obj
+      .filter(item => item !== undefined)
+      .map(item => cleanFirestoreData(item)) as unknown as T;
+  }
+  if (typeof obj === 'object') {
+    const cleaned: Record<string, any> = {};
+    for (const [key, value] of Object.entries(obj as Record<string, any>)) {
+      if (value !== undefined) {
+        cleaned[key] = cleanFirestoreData(value);
+      }
+    }
+    return cleaned as T;
+  }
+  return obj;
+}
+
+const safeSetDoc = async (docRef: any, data: any, options?: any) => {
+  const cleaned = cleanFirestoreData(data);
+  return options ? setDoc(docRef, cleaned, options) : setDoc(docRef, cleaned);
+};
+
+const safeUpdateDoc = async (docRef: any, data: any) => {
+  const cleaned = cleanFirestoreData(data);
+  return updateDoc(docRef, cleaned);
+};
+
 function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
@@ -599,7 +629,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const addStudent = async (student: Student) => {
     try {
-      await setDoc(doc(db, 'students', student.id), { ...student, schoolId: effectiveSchoolId });
+      await safeSetDoc(doc(db, 'students', student.id), { ...student, schoolId: effectiveSchoolId });
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, `students/${student.id}`);
     }
@@ -608,12 +638,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const importStudents = async (newStudents: Student[]) => {
     try {
       const targetSchoolId = effectiveSchoolId || currentUser?.schoolId || '';
-      const studentsWithMeta = newStudents.map(s => ({
-        ...s,
-        schoolId: s.schoolId || targetSchoolId,
-        academicSession: s.academicSession || activeAcademicSession || '2025-26',
-        isDeleted: false
-      }));
+      const studentsWithMeta = newStudents.map(s => {
+        const studentObj = {
+          ...s,
+          schoolId: s.schoolId || targetSchoolId,
+          academicSession: s.academicSession || activeAcademicSession || '2025-26',
+          isDeleted: false
+        };
+        return cleanFirestoreData(studentObj);
+      });
 
       // Optimistically update local React state immediately so UI refreshes without delay
       setStudents(prev => {
@@ -627,7 +660,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       });
 
       for (const s of studentsWithMeta) {
-        await setDoc(doc(db, 'students', s.id), s);
+        await safeSetDoc(doc(db, 'students', s.id), s);
       }
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, 'students/import');
@@ -712,7 +745,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const addTeacher = async (teacher: Teacher) => {
     try {
-      await setDoc(doc(db, 'teachers', teacher.id), { ...teacher, schoolId: effectiveSchoolId });
+      await safeSetDoc(doc(db, 'teachers', teacher.id), { ...teacher, schoolId: effectiveSchoolId });
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, `teachers/${teacher.id}`);
     }
@@ -728,7 +761,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const addClerk = async (clerk: User) => {
     try {
-      await setDoc(doc(db, 'users', clerk.id), { ...clerk, schoolId: effectiveSchoolId });
+      await safeSetDoc(doc(db, 'users', clerk.id), { ...clerk, schoolId: effectiveSchoolId });
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, `users/${clerk.id}`);
     }
@@ -744,7 +777,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const addParentAccount = async (parent: ParentAccount) => {
     try {
-      await setDoc(doc(db, 'parentAccounts', parent.id), { ...parent, schoolId: effectiveSchoolId });
+      await safeSetDoc(doc(db, 'parentAccounts', parent.id), { ...parent, schoolId: effectiveSchoolId });
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, `parentAccounts/${parent.id}`);
     }
@@ -752,7 +785,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const updateParentAccount = async (id: string, updates: Partial<ParentAccount>) => {
     try {
-      await updateDoc(doc(db, 'parentAccounts', id), updates);
+      await safeUpdateDoc(doc(db, 'parentAccounts', id), updates);
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `parentAccounts/${id}`);
     }
@@ -769,7 +802,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const addHomework = async (hw: Omit<Homework, 'id' | 'date' | 'schoolId'>) => {
     try {
       const id = `hw${Date.now()}`;
-      await setDoc(doc(db, 'homeworks', id), {
+      await safeSetDoc(doc(db, 'homeworks', id), {
         ...hw,
         id,
         schoolId: effectiveSchoolId,
@@ -802,7 +835,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return [...filtered, savedMark];
       });
 
-      await setDoc(doc(db, 'marks', id), savedMark);
+      await safeSetDoc(doc(db, 'marks', id), savedMark);
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, 'marks');
     }
@@ -838,7 +871,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       setMarks(Array.from(currentMarksMap.values()));
 
-      const batchList = marksToPersist.map(mark => setDoc(doc(db, 'marks', mark.id), mark));
+      const batchList = marksToPersist.map(mark => safeSetDoc(doc(db, 'marks', mark.id), mark));
       await Promise.all(batchList);
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, 'marks batch');

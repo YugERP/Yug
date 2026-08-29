@@ -5,6 +5,7 @@ import { type Student } from '../../types';
 import { Printer, Search, Download, Edit } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import { isValidPhotoUrl } from '../../utils/gradeHelper';
 
 const convertImgToBase64 = (url: string): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -67,7 +68,7 @@ export function AdmissionSlips({ initialStudent = null, onEdit }: AdmissionSlips
     setSigBase64(null);
 
     if (selectedStudent) {
-      const pUrl = selectedStudent.docStudentPhoto || selectedStudent.photoUrl;
+      const pUrl = isValidPhotoUrl(selectedStudent.docStudentPhoto) ? selectedStudent.docStudentPhoto : (isValidPhotoUrl(selectedStudent.photoUrl) ? selectedStudent.photoUrl : null);
       if (pUrl) {
         if (pUrl.startsWith('data:')) {
           setPhotoBase64(pUrl);
@@ -328,23 +329,24 @@ export function AdmissionSlips({ initialStudent = null, onEdit }: AdmissionSlips
 
                 <div className="col-span-1 flex flex-col items-center justify-start space-y-4 pt-1 border-l pl-4 border-slate-100">
                   {photoBase64 ? (
-                    <img src={photoBase64} alt="Student" className="w-[100px] h-[130px] object-cover border-2 border-slate-400 rounded-sm shadow-sm" referrerPolicy="no-referrer" />
-                  ) : (selectedStudent.docStudentPhoto || selectedStudent.photoUrl) ? (
+                    <img src={photoBase64} alt="Student" className="w-[100px] h-[130px] object-cover border-2 border-slate-400 rounded-sm shadow-sm" referrerPolicy="no-referrer" onError={() => setPhotoBase64(null)} />
+                  ) : isValidPhotoUrl(selectedStudent.docStudentPhoto || selectedStudent.photoUrl) ? (
                     /* Render screen image but hide from html2canvas to avoid taint crash */
                     <div className="relative w-[100px] h-[130px] border-2 border-slate-400 rounded-sm shadow-sm overflow-hidden bg-slate-50">
                       <div className="absolute inset-0 flex items-center justify-center text-[9px] text-slate-500 text-center p-1 leading-snug bg-slate-100 font-bold select-none no-print">
                         PHOTO SECURELY READY
                       </div>
                       <img 
-                        src={selectedStudent.docStudentPhoto || selectedStudent.photoUrl} 
-                        alt="Student" 
+                        src={(isValidPhotoUrl(selectedStudent.docStudentPhoto) ? selectedStudent.docStudentPhoto : selectedStudent.photoUrl) || ''} 
+                        alt="" 
                         className="absolute inset-0 w-full h-full object-cover"
                         data-html2canvas-ignore="true"
                         referrerPolicy="no-referrer"
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
                       />
                     </div>
                   ) : (
-                    <div className="w-[100px] h-[130px] bg-slate-100 border-2 border-dashed border-slate-300 rounded flex items-center justify-center text-slate-400 text-[10px] text-center">Passport Photo Placeholder</div>
+                    <div className="w-[100px] h-[130px] bg-slate-100 border-2 border-dashed border-slate-300 rounded flex items-center justify-center text-slate-400 text-[10px] text-center select-none">Passport Photo Placeholder</div>
                   )}
 
                   {sigBase64 ? (

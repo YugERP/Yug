@@ -380,8 +380,14 @@ export function TeacherPanel() {
              <div>
                <Label>Exam Type</Label>
                <Input as="select" value={markExamType} onChange={e => {
-                   setMarkExamType(e.target.value as ExamType);
+                   const newType = e.target.value as ExamType;
+                   setMarkExamType(newType);
                    setMarkSubject('');
+                   if (newType === 'Half-Yearly Test' || newType === 'Yearly Test') {
+                     setMarkMax('10');
+                   } else {
+                     setMarkMax('90');
+                   }
                }}>
                  <option value="Half-Yearly Test">Half-Yearly Test</option>
                  <option value="Half-Yearly Exam">Half-Yearly Exam</option>
@@ -403,7 +409,23 @@ export function TeacherPanel() {
                <Input type="number" min="0" value={markObtained} onChange={e => setMarkObtained(e.target.value)} />
              </div>
              <div>
-               <Label>Max Marks</Label>
+               <div className="flex justify-between items-center mb-1">
+                 <Label className="mb-0">Max Marks</Label>
+                 <div className="flex gap-1">
+                   {[10, 20, 50, 70, 80, 90, 100].map(v => (
+                     <button
+                       key={v}
+                       type="button"
+                       onClick={() => setMarkMax(String(v))}
+                       className={`text-[9px] px-1 py-0.5 rounded font-bold transition-all ${
+                         markMax === String(v) ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                       }`}
+                     >
+                       {v}
+                     </button>
+                   ))}
+                 </div>
+               </div>
                <Input type="number" min="1" value={markMax} onChange={e => setMarkMax(e.target.value)} />
              </div>
              <div className="md:col-span-3 flex justify-end">

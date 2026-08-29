@@ -4,6 +4,7 @@ import { Card, Button, Input, Label } from '../components/UI';
 import { Printer, GraduationCap, Calendar, CreditCard } from 'lucide-react';
 import type { ParentAccount, Student } from '../types';
 import { StudentReportCard } from '../components/StudentReportCard';
+import { isValidPhotoUrl } from '../utils/gradeHelper';
 
 export function ParentPanel() {
   const { currentUser, parentAccounts, students, schools, homeworks, marks, feeRecords, getStudentBalance, attendances, activeAcademicSession } = useStore();
@@ -91,8 +92,13 @@ export function ParentPanel() {
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="bg-slate-800 p-6 flex flex-col md:flex-row items-center gap-6">
           <div className="w-20 h-20 rounded-full bg-slate-700 border-2 border-slate-600 flex items-center justify-center overflow-hidden flex-shrink-0">
-             {student.photoUrl || student.docStudentPhoto ? (
-               <img src={student.photoUrl || student.docStudentPhoto} alt={student.name} className="w-full h-full object-cover" />
+             {isValidPhotoUrl(student.photoUrl || student.docStudentPhoto) ? (
+               <img 
+                 src={(isValidPhotoUrl(student.photoUrl) ? student.photoUrl : student.docStudentPhoto) || ''} 
+                 alt="" 
+                 className="w-full h-full object-cover" 
+                 onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+               />
              ) : (
                <GraduationCap className="w-10 h-10 text-slate-400" />
              )}
