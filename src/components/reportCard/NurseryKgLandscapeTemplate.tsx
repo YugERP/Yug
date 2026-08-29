@@ -1,5 +1,6 @@
 import React from 'react';
 import { type ReportCardCommonProps, getSchoolNameStyle, getAddressStyle, getDynamicScaling, displayVal } from './types';
+import { isPracticalSubject } from '../../utils/gradeHelper';
 
 export const NurseryKgLandscapeTemplate: React.FC<ReportCardCommonProps> = ({
   student,
@@ -76,7 +77,7 @@ export const NurseryKgLandscapeTemplate: React.FC<ReportCardCommonProps> = ({
             ACADEMIC SESSION {sessionToUse}
           </span>
           <div className="px-4 py-0.5 bg-[#002060] text-white rounded border border-white font-serif text-[11.5px] font-black tracking-widest uppercase shadow-sm">
-            PROGRESS REPORT (NURSERY / KG)
+            PROGRESS REPORT CARD
           </div>
           <span className="font-serif text-[#002060] text-[9.5px] font-extrabold tracking-widest uppercase">
             ANNUAL EVALUATION
@@ -154,52 +155,81 @@ export const NurseryKgLandscapeTemplate: React.FC<ReportCardCommonProps> = ({
             <table className={`w-full table-fixed border-2 border-[#002060] text-center ${dyn.tableText} font-serif border-collapse`}>
               <thead>
                 <tr className="border-b-2 border-[#002060] bg-slate-50">
-                  <th rowSpan={2} className={`border-r-2 border-[#002060] ${dyn.cellPy} ${dyn.cellPx} text-center align-middle text-slate-800 font-black w-[18%]`}>SUBJECT</th>
-                  <th colSpan={5} className={`border-r-2 border-[#002060] ${dyn.cellPy} text-center font-extrabold text-[#002060] uppercase bg-slate-50 ${dyn.tableHeader}`}>TERM - I (HALF YEARLY)</th>
-                  <th colSpan={5} className={`border-r-2 border-[#002060] ${dyn.cellPy} text-center font-extrabold text-[#002060] uppercase bg-slate-50 ${dyn.tableHeader}`}>TERM - II (ANNUAL)</th>
+                  <th rowSpan={2} className={`border-r-2 border-[#002060] ${dyn.cellPy} ${dyn.cellPx} text-center align-middle text-slate-800 font-black w-[16%]`}>SUBJECT</th>
+                  <th colSpan={6} className={`border-r-2 border-[#002060] ${dyn.cellPy} text-center font-extrabold text-[#002060] uppercase bg-slate-50 ${dyn.tableHeader}`}>TERM - I (HALF YEARLY)</th>
+                  <th colSpan={6} className={`border-r-2 border-[#002060] ${dyn.cellPy} text-center font-extrabold text-[#002060] uppercase bg-slate-50 ${dyn.tableHeader}`}>TERM - II (ANNUAL)</th>
                   <th colSpan={3} className={`p-0.5 text-center font-extrabold text-[#002060] uppercase bg-slate-50 ${dyn.tableHeader}`}>FINAL</th>
                 </tr>
                 <tr className={`border-b-2 border-[#002060] ${dyn.tableSubHeader} font-bold text-slate-700 bg-slate-50/50`}>
-                  <th className="border-r border-[#002060] p-0.5 w-[6%]">TEST</th>
-                  <th className="border-r border-[#002060] p-0.5 w-[7.5%]">WRITTEN</th>
-                  <th className="border-r border-[#002060] p-0.5 w-[7.5%] text-indigo-900 bg-indigo-50/40">ORAL</th>
-                  <th className="border-r border-[#002060] p-0.5 w-[6%]">TOTAL</th>
-                  <th className="border-r-2 border-[#002060] p-0.5 w-[6.5%] text-[#002060]">OBT</th>
-                  <th className="border-r border-[#002060] p-0.5 w-[6%]">TEST</th>
-                  <th className="border-r border-[#002060] p-0.5 w-[7.5%]">WRITTEN</th>
-                  <th className="border-r border-[#002060] p-0.5 w-[7.5%] text-indigo-900 bg-indigo-50/40">ORAL</th>
-                  <th className="border-r border-[#002060] p-0.5 w-[6%]">TOTAL</th>
-                  <th className="border-r-2 border-[#002060] p-0.5 w-[6.5%] text-[#002060]">OBT</th>
-                  <th className="border-r border-[#002060] p-0.5 w-[5%]">MAX</th>
-                  <th className="border-r border-[#002060] p-0.5 w-[5%] text-[#002060]">OBT</th>
-                  <th className="p-0.5 w-[5%] text-indigo-700">GRD</th>
+                  <th className="border-r border-[#002060] p-0.5 w-[4.8%]">TEST<br/>(10)</th>
+                  <th className="border-r border-[#002060] p-0.5 w-[5.8%]">WRIT.</th>
+                  <th className="border-r border-[#002060] p-0.5 w-[4.8%] text-amber-900 bg-amber-50/30">ORAL</th>
+                  <th className="border-r border-[#002060] p-0.5 w-[4.8%] text-indigo-900 bg-indigo-50/40">PRAC.</th>
+                  <th className="border-r border-[#002060] p-0.5 w-[5.6%]">MAX<br/>MARKS</th>
+                  <th className="border-r-2 border-[#002060] p-0.5 w-[6.2%] text-[#002060]">OBT.</th>
+
+                  <th className="border-r border-[#002060] p-0.5 w-[4.8%]">TEST<br/>(10)</th>
+                  <th className="border-r border-[#002060] p-0.5 w-[5.8%]">WRIT.</th>
+                  <th className="border-r border-[#002060] p-0.5 w-[4.8%] text-amber-900 bg-amber-50/30">ORAL</th>
+                  <th className="border-r border-[#002060] p-0.5 w-[4.8%] text-indigo-900 bg-indigo-50/40">PRAC.</th>
+                  <th className="border-r border-[#002060] p-0.5 w-[5.6%]">MAX<br/>MARKS</th>
+                  <th className="border-r-2 border-[#002060] p-0.5 w-[6.2%] text-[#002060]">OBT.</th>
+
+                  <th className="border-r border-[#002060] p-0.5 w-[6.5%]">MAX</th>
+                  <th className="border-r border-[#002060] p-0.5 w-[7.5%] text-[#002060]">OBT.</th>
+                  <th className="p-0.5 w-[6%] text-indigo-700">GRD</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#002060]">
-                {subjectRows.map((sub, index) => (
-                  <tr key={`${sub.subject}-${index}`} className="hover:bg-slate-50/20">
-                    <td className={`border-r-2 border-[#002060] text-left ${dyn.cellPx} ${dyn.cellPy} font-extrabold uppercase text-[#002060] bg-slate-50/20 ${dyn.subjectCell} truncate`} title={sub.subject}>
-                      {sub.subject}
-                    </td>
-                    <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono`}>{displayVal(sub.hyTestExists, sub.hyTestVal)}</td>
-                    <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono`}>{displayVal(sub.hyExamExists, sub.hyExamVal)}</td>
-                    <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-indigo-900 bg-indigo-50/20`}>
-                      {displayVal(sub.hyPracExists, sub.hyPracVal)}
-                    </td>
-                    <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-slate-500`}>{sub.hasHy ? sub.hyMax : ''}</td>
-                    <td className={`border-r-2 border-[#002060] ${dyn.cellPy} p-0.5 font-black text-center font-mono text-slate-900 bg-indigo-50/10`}>{sub.hasHy ? sub.hyObt : ''}</td>
-                    <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono`}>{displayVal(sub.yTestExists, sub.yTestVal)}</td>
-                    <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono`}>{displayVal(sub.yExamExists, sub.yExamVal)}</td>
-                    <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-indigo-900 bg-indigo-50/20`}>
-                      {displayVal(sub.yPracExists, sub.yPracVal)}
-                    </td>
-                    <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-slate-500`}>{sub.hasY ? sub.yMax : ''}</td>
-                    <td className={`border-r-2 border-[#002060] ${dyn.cellPy} p-0.5 font-black text-center font-mono text-slate-900 bg-indigo-50/10`}>{sub.hasY ? sub.yObt : ''}</td>
-                    <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-slate-500`}>{sub.hasAny ? sub.finalMax : ''}</td>
-                    <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-black text-center font-mono text-[#002060] bg-indigo-50/25`}>{sub.hasAny ? sub.finalObt : ''}</td>
-                    <td className={`p-0.5 ${dyn.cellPy} font-black text-center text-indigo-800 bg-indigo-50/40`}>{sub.hasAny ? sub.grade : ''}</td>
-                  </tr>
-                ))}
+                {subjectRows.map((sub, index) => {
+                  return (
+                    <tr key={`${sub.subject}-${index}`} className="hover:bg-slate-50/20">
+                      <td className={`border-r-2 border-[#002060] text-left ${dyn.cellPx} ${dyn.cellPy} font-extrabold uppercase text-[#002060] bg-slate-50/20 ${dyn.subjectCell} truncate`} title={sub.subject}>
+                        {sub.subject}
+                      </td>
+                      {/* HY Test */}
+                      <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono`}>{displayVal(sub.hyTestExists, sub.hyTestVal)}</td>
+                      {/* HY Written */}
+                      <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono`}>{displayVal(sub.hyExamExists, sub.hyExamVal)}</td>
+                      {/* HY Oral */}
+                      <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-amber-900 bg-amber-50/20`}>
+                        {sub.hyOralExists || sub.hyOralVal > 0 ? displayVal(sub.hyOralExists, sub.hyOralVal) : '-'}
+                      </td>
+                      {/* HY Practical */}
+                      <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-indigo-900 bg-indigo-50/20`}>
+                        {sub.hyPracExists || sub.hyPracVal > 0 || sub.isSubjectPractical ? displayVal(sub.hyPracExists, sub.hyPracVal) : '-'}
+                      </td>
+                      {/* HY Max */}
+                      <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-slate-500`}>{sub.hasHy ? sub.hyMax : ''}</td>
+                      {/* HY Obt */}
+                      <td className={`border-r-2 border-[#002060] ${dyn.cellPy} p-0.5 font-black text-center font-mono text-slate-900 bg-indigo-50/10`}>{sub.hasHy ? sub.hyObt : ''}</td>
+
+                      {/* Y Test */}
+                      <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono`}>{displayVal(sub.yTestExists, sub.yTestVal)}</td>
+                      {/* Y Written */}
+                      <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono`}>{displayVal(sub.yExamExists, sub.yExamVal)}</td>
+                      {/* Y Oral */}
+                      <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-amber-900 bg-amber-50/20`}>
+                        {sub.yOralExists || sub.yOralVal > 0 ? displayVal(sub.yOralExists, sub.yOralVal) : '-'}
+                      </td>
+                      {/* Y Practical */}
+                      <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-indigo-900 bg-indigo-50/20`}>
+                        {sub.yPracExists || sub.yPracVal > 0 || sub.isSubjectPractical ? displayVal(sub.yPracExists, sub.yPracVal) : '-'}
+                      </td>
+                      {/* Y Max */}
+                      <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-slate-500`}>{sub.hasY ? sub.yMax : ''}</td>
+                      {/* Y Obt */}
+                      <td className={`border-r-2 border-[#002060] ${dyn.cellPy} p-0.5 font-black text-center font-mono text-slate-900 bg-indigo-50/10`}>{sub.hasY ? sub.yObt : ''}</td>
+
+                      {/* Overall Max */}
+                      <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-slate-500`}>{sub.hasAny ? sub.finalMax : ''}</td>
+                      {/* Overall Obt */}
+                      <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-black text-center font-mono text-[#002060] bg-indigo-50/25`}>{sub.hasAny ? sub.finalObt : ''}</td>
+                      {/* Grade */}
+                      <td className={`p-0.5 ${dyn.cellPy} font-black text-center text-indigo-800 bg-indigo-50/40`}>{sub.hasAny ? sub.grade : ''}</td>
+                    </tr>
+                  );
+                })}
                 
                 {/* Row Total */}
                 <tr className={`font-black text-slate-900 bg-slate-100 border-t-2 border-[#002060] ${dyn.tableText}`}>
@@ -207,8 +237,10 @@ export const NurseryKgLandscapeTemplate: React.FC<ReportCardCommonProps> = ({
                   <td className="border-r border-[#002060] p-0.5"></td>
                   <td className="border-r border-[#002060] p-0.5"></td>
                   <td className="border-r border-[#002060] p-0.5"></td>
+                  <td className="border-r border-[#002060] p-0.5"></td>
                   <td className="border-r border-[#002060] p-0.5 font-mono text-slate-600">{totalHyMax > 0 ? totalHyMax : ''}</td>
                   <td className="border-r-2 border-[#002060] p-0.5 font-mono text-slate-900">{totalHyObt > 0 ? totalHyObt : ''}</td>
+                  <td className="border-r border-[#002060] p-0.5"></td>
                   <td className="border-r border-[#002060] p-0.5"></td>
                   <td className="border-r border-[#002060] p-0.5"></td>
                   <td className="border-r border-[#002060] p-0.5"></td>

@@ -5,7 +5,7 @@ import { type Student, type ExamType, type ExamMark } from '../../types';
 import { 
   Award, CheckCircle, Search, Save, Calendar, CheckSquare, Sparkles, 
   Layers, Users, User, ChevronLeft, ChevronRight, Sliders, Grid, BookOpen,
-  ArrowRight, RefreshCw, Check, FlaskConical
+  ArrowRight, RefreshCw, Check, FlaskConical, Trash2
 } from 'lucide-react';
 import { 
   normalizeGrade, isSameGrade, getDefaultSubjectsForGrade, ALL_STANDARD_CLASSES, 
@@ -18,7 +18,7 @@ const PRESET_MAX_MARKS = [10, 20, 25, 30, 50, 60, 70, 80, 90, 100];
 const PRESET_PRACTICAL_MAX_MARKS = [10, 15, 20, 25, 30, 40, 50];
 
 export function ExamResults() {
-  const { students, marks, addMark, importMarks, updateStudent, currentUser } = useStore();
+  const { students, marks, addMark, importMarks, deleteMark, deleteSubjectMarks, deleteStudentAllMarks, updateStudent, currentUser } = useStore();
   const [activeMode, setActiveMode] = useState<EntryMode>('single-subject');
   const [selectedClass, setSelectedClass] = useState('Class 9');
   const [examType, setExamType] = useState<ExamType>('Half-Yearly Test');
@@ -139,7 +139,7 @@ export function ExamResults() {
   });
 
   // Local grid of marks for currently selected student in Mode 2:
-  // key format: `${subject}:::${examType}:::obt` or `...:::max` or `...:::pracObt` or `...:::pracMax`
+  // key format: `${subject}:::${examType}:::obt` or `...:::max` or `...:::oralObt` or `...:::oralMax` or `...:::pracObt` or `...:::pracMax`
   const [studentMixedMarks, setStudentMixedMarks] = useState<Record<string, number>>({});
   const [isStudentMixedSaved, setIsStudentMixedSaved] = useState(false);
   const [isStudentMixedSaving, setIsStudentMixedSaving] = useState(false);
@@ -165,6 +165,11 @@ export function ExamResults() {
 
         initialMap[`${sub}:::${et}:::obt`] = found ? found.marksObtained : 0;
         initialMap[`${sub}:::${et}:::max`] = found ? found.maxMarks : defaultTheoryMax;
+
+        const oObt = found?.oralMarks !== undefined ? found.oralMarks : 0;
+        const oMax = found?.oralMaxMarks !== undefined ? found.oralMaxMarks : 0;
+        initialMap[`${sub}:::${et}:::oralObt`] = oObt;
+        initialMap[`${sub}:::${et}:::oralMax`] = oMax;
 
         const pObt = found?.practicalMarks !== undefined ? found.practicalMarks : (foundPrac ? foundPrac.marksObtained : 0);
         const pMax = found?.practicalMaxMarks !== undefined ? found.practicalMaxMarks : (foundPrac ? foundPrac.maxMarks : defaultPracMax);
@@ -390,10 +395,37 @@ export function ExamResults() {
     }
   };
 
+  const handleClearSubjectMarks = async () => {
+    if (!window.confirm(`क्या आप वाकई इस कक्षा के सभी छात्रों के लिए "${subject}" (${examType}) के अंक हटाना / रीसेट करना चाहते हैं? इससे यह विषय रिपोर्ट कार्ड से खाली हो जाएगा।`)) {
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const studentIds = classStudents.map(s => s.id);
+      await deleteSubjectMarks(studentIds, subject, examType);
+      setMarksMap({});
+      setMaxMarksMap({});
+      setPracticalMarksMap({});
+      setPracticalMaxMarksMap({});
+      setIsSaved(false);
+      alert(`"${subject}" (${examType}) के अंक सफलतापूर्वक हटा दिए गए हैं।`);
+    } catch (err) {
+      console.error('Failed to clear subject marks:', err);
+      alert('अंक हटाने में त्रुटि हुई।');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   // -------------------------------------------------------------
   // HELPERS & HANDLERS: STUDENT 4-IN-1 MIXED (MODE 2)
   // -------------------------------------------------------------
-  const handleStudentMixedMarkChange = (sub: string, et: ExamType, field: 'obt' | 'max' | 'pracObt' | 'pracMax', val: number) => {
+  const handleStudentMixedMarkChange = (
+    sub: string, 
+    et: ExamType, 
+    field: 'obt' | 'max' | 'oralObt' | 'oralMax' | 'pracObt' | 'pracMax', 
+    val: number
+  ) => {
     setStudentMixedMarks(prev => ({
       ...prev,
       [`${sub}:::${et}:::${field}`]: isNaN(val) ? 0 : val
@@ -425,10 +457,20 @@ export function ExamResults() {
       subjects.forEach(sub => {
         const subHasPrac = isPracticalSubject(sub);
         examTypesList.forEach(et => {
+          const isTest = et === 'Half-Yearly Test' || et === 'Yearly Test';
+          const defaultTheoryMax = isTest ? 10 : subHasPrac ? 60 : 90;
+
           const obt = studentMixedMarks[`${sub}:::${et}:::obt`] ?? 0;
-          const max = studentMixedMarks[`${sub}:::${et}:::max`] ?? ((et === 'Half-Yearly Test' || et === 'Yearly Test') ? 10 : subHasPrac ? 60 : 90);
-          const pracObt = studentMixedMarks[`${sub}:::${et}:::pracObt`] ?? 0;
-          const pracMax = studentMixedMarks[`${sub}:::${et}:::pracMax`] ?? (subHasPrac ? 30 : 0);
+          const max = studentMixedMarks[`${sub}:::${et}:::max`] ?? defaultTheoryMax;
+
+          const oralObt = studentMixedMarks[`${sub}:::${et}:::oralObt`];
+          const oralMax = studentMixedMarks[`${sub}:::${et}:::oralMax`];
+
+          const pracObt = studentMixedMarks[`${sub}:::${et}:::pracObt`];
+          const pracMax = studentMixedMarks[`${sub}:::${et}:::pracMax`];
+
+          const hasOral = (oralObt !== undefined && oralObt > 0) || (oralMax !== undefined && oralMax > 0);
+          const hasPrac = (pracObt !== undefined && pracObt > 0) || (pracMax !== undefined && pracMax > 0) || (!isTest && subHasPrac);
 
           marksToSave.push({
             studentId: selectedStudentId,
@@ -437,8 +479,10 @@ export function ExamResults() {
             subject: normalizeSubject(sub),
             marksObtained: Number(obt),
             maxMarks: Number(max),
-            practicalMarks: subHasPrac ? Number(pracObt) : undefined,
-            practicalMaxMarks: subHasPrac ? Number(pracMax) : undefined
+            oralMarks: hasOral ? Number(oralObt || 0) : undefined,
+            oralMaxMarks: hasOral ? Number(oralMax || 20) : undefined,
+            practicalMarks: hasPrac ? Number(pracObt || 0) : undefined,
+            practicalMaxMarks: hasPrac ? Number(pracMax || 30) : undefined
           });
         });
       });
@@ -449,6 +493,40 @@ export function ExamResults() {
     } catch (err) {
       console.error('Failed to save student mixed marks:', err);
       alert('अंक सुरक्षित करने में त्रुटि हुई।');
+    } finally {
+      setIsStudentMixedSaving(false);
+    }
+  };
+
+  const handleClearStudentAllMarks = async () => {
+    if (!selectedStudentId) return;
+    const stName = currentSelectedStudent?.name || 'इस छात्र';
+    if (!window.confirm(`क्या आप वाकई ${stName} के सभी परीक्षाओं (Half-Yearly & Yearly) के अंक हटाना / रीसेट करना चाहते हैं?`)) {
+      return;
+    }
+    setIsStudentMixedSaving(true);
+    try {
+      await deleteStudentAllMarks(selectedStudentId);
+      const initialMap: Record<string, number> = {};
+      const examTypesList: ExamType[] = ['Half-Yearly Test', 'Half-Yearly Exam', 'Yearly Test', 'Yearly Exam'];
+      subjects.forEach(sub => {
+        const subHasPrac = isPracticalSubject(sub);
+        examTypesList.forEach(et => {
+          const defaultTheoryMax = (et === 'Half-Yearly Test' || et === 'Yearly Test') ? 10 : subHasPrac ? 60 : 90;
+          initialMap[`${sub}:::${et}:::obt`] = 0;
+          initialMap[`${sub}:::${et}:::max`] = defaultTheoryMax;
+          initialMap[`${sub}:::${et}:::oralObt`] = 0;
+          initialMap[`${sub}:::${et}:::oralMax`] = 0;
+          initialMap[`${sub}:::${et}:::pracObt`] = 0;
+          initialMap[`${sub}:::${et}:::pracMax`] = subHasPrac ? 30 : 0;
+        });
+      });
+      setStudentMixedMarks(initialMap);
+      setIsStudentMixedSaved(false);
+      alert(`${stName} के सभी अंक सफलतापूर्वक हटा दिए गए हैं।`);
+    } catch (err) {
+      console.error('Failed to clear student marks:', err);
+      alert('अंक हटाने में त्रुटि हुई।');
     } finally {
       setIsStudentMixedSaving(false);
     }
@@ -1170,6 +1248,16 @@ export function ExamResults() {
                   * <strong>Submit Subject Marksheet</strong> बटन दबाते ही डेटा सुरक्षित हो जाएगा और रिपोर्ट कार्ड्स पर तुरंत अपडेट हो जाएगा।
                 </span>
                 <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={handleClearSubjectMarks}
+                    disabled={isSaving}
+                    className="px-3.5 py-2 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                    <span>Clear Marks ({subject})</span>
+                  </button>
+
                   {isSaved && (
                     <span className="text-xs text-emerald-700 font-bold flex items-center gap-1 bg-emerald-50 px-3 py-1.5 border border-emerald-200 rounded-lg shadow-xs">
                       <CheckCircle className="w-4 h-4 text-emerald-600" />
@@ -1216,8 +1304,17 @@ export function ExamResults() {
                 </div>
               </div>
 
-              {/* Prev / Next buttons */}
+              {/* Prev / Next & Reset buttons */}
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleClearStudentAllMarks}
+                  disabled={isStudentMixedSaving}
+                  className="px-3 py-1.5 text-xs font-bold bg-rose-600/80 hover:bg-rose-600 text-white rounded-lg border border-rose-400/40 disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center gap-1 cursor-pointer"
+                  title="Clear all exam marks for this student"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> <span>Reset All Marks</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => handleNavigateStudent('prev')}
@@ -1237,35 +1334,129 @@ export function ExamResults() {
               </div>
             </div>
 
-            {/* Quick Column Max Marks Setter Bar for each of the 4 Exam Types */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 pt-2 border-t border-purple-800/60">
-              {(['Half-Yearly Test', 'Half-Yearly Exam', 'Yearly Test', 'Yearly Exam'] as ExamType[]).map(et => (
-                <div key={et} className="bg-purple-950/70 p-2 rounded-lg border border-purple-700/50 flex flex-col gap-1">
-                  <span className="text-[10px] font-bold text-purple-200 truncate">{et} Max:</span>
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="number"
-                      value={studentMixedMaxMarks[et]}
-                      onChange={e => handleApplyColumnMaxMarksInStudentMixed(et, Number(e.target.value))}
-                      className="w-12 text-center text-xs font-mono font-bold bg-white text-slate-900 rounded p-1"
-                    />
-                    <div className="flex items-center gap-0.5">
-                      {[10, 20, 60, 70, 90, 100].map(v => (
-                        <button
-                          key={v}
-                          type="button"
-                          onClick={() => handleApplyColumnMaxMarksInStudentMixed(et, v)}
-                          className={`text-[9px] px-1 py-0.5 rounded font-bold transition-all cursor-pointer ${
-                            studentMixedMaxMarks[et] === v ? 'bg-amber-400 text-slate-950 font-black' : 'bg-purple-800/80 text-white hover:bg-purple-700'
-                          }`}
-                        >
-                          {v}
-                        </button>
-                      ))}
-                    </div>
+            {/* Quick Column Max Marks Setter Bar for each component */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-purple-800/60">
+              {/* 1. Test Max */}
+              <div className="bg-purple-950/70 p-2 rounded-lg border border-purple-700/50 flex flex-col gap-1">
+                <span className="text-[10px] font-bold text-indigo-200 truncate">Test Max (10):</span>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    value={studentMixedMaxMarks['Half-Yearly Test']}
+                    onChange={e => {
+                      const v = Number(e.target.value);
+                      handleApplyColumnMaxMarksInStudentMixed('Half-Yearly Test', v);
+                      handleApplyColumnMaxMarksInStudentMixed('Yearly Test', v);
+                    }}
+                    className="w-12 text-center text-xs font-mono font-bold bg-white text-slate-900 rounded p-1"
+                  />
+                  <div className="flex items-center gap-0.5">
+                    {[10, 20].map(v => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => {
+                          handleApplyColumnMaxMarksInStudentMixed('Half-Yearly Test', v);
+                          handleApplyColumnMaxMarksInStudentMixed('Yearly Test', v);
+                        }}
+                        className={`text-[9px] px-1.5 py-0.5 rounded font-bold transition-all cursor-pointer ${
+                          studentMixedMaxMarks['Half-Yearly Test'] === v ? 'bg-amber-400 text-slate-950 font-black' : 'bg-purple-800/80 text-white hover:bg-purple-700'
+                        }`}
+                      >
+                        {v}
+                      </button>
+                    ))}
                   </div>
                 </div>
-              ))}
+              </div>
+
+              {/* 2. Written Max */}
+              <div className="bg-purple-950/70 p-2 rounded-lg border border-purple-700/50 flex flex-col gap-1">
+                <span className="text-[10px] font-bold text-blue-200 truncate">WRIT. Max (लिखित):</span>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    value={studentMixedMaxMarks['Half-Yearly Exam']}
+                    onChange={e => {
+                      const v = Number(e.target.value);
+                      handleApplyColumnMaxMarksInStudentMixed('Half-Yearly Exam', v);
+                      handleApplyColumnMaxMarksInStudentMixed('Yearly Exam', v);
+                    }}
+                    className="w-12 text-center text-xs font-mono font-bold bg-white text-slate-900 rounded p-1"
+                  />
+                  <div className="flex items-center gap-0.5">
+                    {[60, 70, 80, 90, 100].map(v => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => {
+                          handleApplyColumnMaxMarksInStudentMixed('Half-Yearly Exam', v);
+                          handleApplyColumnMaxMarksInStudentMixed('Yearly Exam', v);
+                        }}
+                        className={`text-[9px] px-1.5 py-0.5 rounded font-bold transition-all cursor-pointer ${
+                          studentMixedMaxMarks['Half-Yearly Exam'] === v ? 'bg-amber-400 text-slate-950 font-black' : 'bg-purple-800/80 text-white hover:bg-purple-700'
+                        }`}
+                      >
+                        {v}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Oral Max */}
+              <div className="bg-purple-950/70 p-2 rounded-lg border border-purple-700/50 flex flex-col gap-1">
+                <span className="text-[10px] font-bold text-amber-200 truncate">ORAL Max (मौखिक):</span>
+                <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1">
+                    {[10, 15, 20, 25].map(v => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => {
+                          const updated = { ...studentMixedMarks };
+                          subjects.forEach(sub => {
+                            updated[`${sub}:::Half-Yearly Exam:::oralMax`] = v;
+                            updated[`${sub}:::Yearly Exam:::oralMax`] = v;
+                          });
+                          setStudentMixedMarks(updated);
+                          setIsStudentMixedSaved(false);
+                        }}
+                        className="text-[9.5px] px-2 py-0.5 rounded font-bold transition-all cursor-pointer bg-amber-500 hover:bg-amber-400 text-slate-950 font-black shadow-xs"
+                      >
+                        Set {v}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. Practical Max */}
+              <div className="bg-purple-950/70 p-2 rounded-lg border border-purple-700/50 flex flex-col gap-1">
+                <span className="text-[10px] font-bold text-emerald-200 truncate">PRAC. Max (प्रायोगिक):</span>
+                <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1">
+                    {[20, 25, 30, 40].map(v => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => {
+                          const updated = { ...studentMixedMarks };
+                          subjects.forEach(sub => {
+                            updated[`${sub}:::Half-Yearly Exam:::pracMax`] = v;
+                            updated[`${sub}:::Yearly Exam:::pracMax`] = v;
+                          });
+                          setStudentMixedMarks(updated);
+                          setIsStudentMixedSaved(false);
+                        }}
+                        className="text-[9.5px] px-2 py-0.5 rounded font-bold transition-all cursor-pointer bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black shadow-xs"
+                      >
+                        Set {v}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1279,26 +1470,55 @@ export function ExamResults() {
               <div className="overflow-x-auto border border-slate-200 rounded-lg">
                 <table className="w-full text-left text-[11px] text-slate-600">
                   <thead className="bg-slate-50 uppercase text-[9px] font-extrabold text-slate-600 border-b border-slate-200 text-center">
-                    <tr>
-                      <th className="px-3 py-2.5 text-left w-40">विषय (Subject)</th>
-                      <th className="px-3 py-2.5 bg-indigo-50/70 text-indigo-900 border-l border-r border-indigo-100">
-                        अर्द्धवार्षिक टेस्ट (HY Test)
-                        <span className="block text-[8px] text-indigo-600 font-normal">Obt / Max</span>
+                    <tr className="border-b border-slate-200">
+                      <th rowSpan={2} className="px-3 py-2 text-left w-36 bg-slate-100/70 text-slate-800 font-black border-r border-slate-200">
+                        विषय (Subject)
                       </th>
-                      <th className="px-3 py-2.5 bg-blue-50/70 text-blue-900 border-r border-blue-100">
-                        अर्द्धवार्षिक परीक्षा (HY Exam)
-                        <span className="block text-[8px] text-blue-600 font-normal">Theory (Obt/Max) | Prac</span>
+                      <th colSpan={4} className="px-3 py-1.5 bg-indigo-50 text-indigo-950 border-r border-indigo-200 font-extrabold text-[10px]">
+                        TERM - I (HALF YEARLY / अर्द्धवार्षिक)
                       </th>
-                      <th className="px-3 py-2.5 bg-amber-50/70 text-amber-900 border-r border-amber-100">
-                        वार्षिक टेस्ट (Yearly Test)
-                        <span className="block text-[8px] text-amber-600 font-normal">Obt / Max</span>
+                      <th colSpan={4} className="px-3 py-1.5 bg-emerald-50 text-emerald-950 border-r border-emerald-200 font-extrabold text-[10px]">
+                        TERM - II (ANNUAL / वार्षिक)
                       </th>
-                      <th className="px-3 py-2.5 bg-emerald-50/70 text-emerald-900 border-r border-emerald-100">
-                        वार्षिक परीक्षा (Yearly Exam)
-                        <span className="block text-[8px] text-emerald-600 font-normal">Theory (Obt/Max) | Prac</span>
+                      <th rowSpan={2} className="px-3 py-2 bg-slate-100 text-slate-800 w-24 font-black">
+                        FINAL (कुल / %)
                       </th>
-                      <th className="px-3 py-2.5 bg-slate-100 text-slate-800 w-24">
-                        कुल (Total / %)
+                    </tr>
+                    <tr className="text-[8.5px] text-slate-700 bg-slate-50">
+                      {/* HY Columns */}
+                      <th className="px-1.5 py-1.5 bg-indigo-50/70 border-r border-indigo-100 text-indigo-900 font-bold w-20">
+                        TEST (10)
+                        <span className="block text-[7.5px] text-indigo-600 font-normal">Obt / Max</span>
+                      </th>
+                      <th className="px-1.5 py-1.5 bg-blue-50/70 border-r border-blue-100 text-blue-900 font-bold w-24">
+                        WRIT. (लिखित)
+                        <span className="block text-[7.5px] text-blue-600 font-normal">Obt / Max</span>
+                      </th>
+                      <th className="px-1.5 py-1.5 bg-amber-50/80 border-r border-amber-100 text-amber-950 font-bold w-20">
+                        ORAL (मौखिक)
+                        <span className="block text-[7.5px] text-amber-700 font-normal">Obt / Max</span>
+                      </th>
+                      <th className="px-1.5 py-1.5 bg-teal-50/80 border-r-2 border-slate-300 text-teal-950 font-bold w-20">
+                        PRAC. (प्रायोगिक)
+                        <span className="block text-[7.5px] text-teal-700 font-normal">Obt / Max</span>
+                      </th>
+
+                      {/* Annual Columns */}
+                      <th className="px-1.5 py-1.5 bg-indigo-50/70 border-r border-indigo-100 text-indigo-900 font-bold w-20">
+                        TEST (10)
+                        <span className="block text-[7.5px] text-indigo-600 font-normal">Obt / Max</span>
+                      </th>
+                      <th className="px-1.5 py-1.5 bg-blue-50/70 border-r border-blue-100 text-blue-900 font-bold w-24">
+                        WRIT. (लिखित)
+                        <span className="block text-[7.5px] text-blue-600 font-normal">Obt / Max</span>
+                      </th>
+                      <th className="px-1.5 py-1.5 bg-amber-50/80 border-r border-amber-100 text-amber-950 font-bold w-20">
+                        ORAL (मौखिक)
+                        <span className="block text-[7.5px] text-amber-700 font-normal">Obt / Max</span>
+                      </th>
+                      <th className="px-1.5 py-1.5 bg-teal-50/80 border-r-2 border-slate-300 text-teal-950 font-bold w-20">
+                        PRAC. (प्रायोगिक)
+                        <span className="block text-[7.5px] text-teal-700 font-normal">Obt / Max</span>
                       </th>
                     </tr>
                   </thead>
@@ -1306,180 +1526,245 @@ export function ExamResults() {
                     {subjects.map(sub => {
                       const subHasPrac = isPracticalSubject(sub);
 
+                      // HY Values
                       const hyTestObt = studentMixedMarks[`${sub}:::Half-Yearly Test:::obt`] ?? 0;
                       const hyTestMax = studentMixedMarks[`${sub}:::Half-Yearly Test:::max`] ?? 10;
 
                       const hyExamObt = studentMixedMarks[`${sub}:::Half-Yearly Exam:::obt`] ?? 0;
                       const hyExamMax = studentMixedMarks[`${sub}:::Half-Yearly Exam:::max`] ?? (subHasPrac ? 60 : 90);
-                      const hyExamPracObt = studentMixedMarks[`${sub}:::Half-Yearly Exam:::pracObt`] ?? 0;
-                      const hyExamPracMax = studentMixedMarks[`${sub}:::Half-Yearly Exam:::pracMax`] ?? (subHasPrac ? 30 : 0);
 
+                      const hyOralObt = studentMixedMarks[`${sub}:::Half-Yearly Exam:::oralObt`] ?? 0;
+                      const hyOralMax = studentMixedMarks[`${sub}:::Half-Yearly Exam:::oralMax`] ?? (hyOralObt > 0 ? 20 : 0);
+
+                      const hyPracObt = studentMixedMarks[`${sub}:::Half-Yearly Exam:::pracObt`] ?? 0;
+                      const hyPracMax = studentMixedMarks[`${sub}:::Half-Yearly Exam:::pracMax`] ?? (subHasPrac ? 30 : (hyPracObt > 0 ? 30 : 0));
+
+                      // Annual Values
                       const yTestObt = studentMixedMarks[`${sub}:::Yearly Test:::obt`] ?? 0;
                       const yTestMax = studentMixedMarks[`${sub}:::Yearly Test:::max`] ?? 10;
 
                       const yExamObt = studentMixedMarks[`${sub}:::Yearly Exam:::obt`] ?? 0;
                       const yExamMax = studentMixedMarks[`${sub}:::Yearly Exam:::max`] ?? (subHasPrac ? 60 : 90);
-                      const yExamPracObt = studentMixedMarks[`${sub}:::Yearly Exam:::pracObt`] ?? 0;
-                      const yExamPracMax = studentMixedMarks[`${sub}:::Yearly Exam:::pracMax`] ?? (subHasPrac ? 30 : 0);
 
-                      const totalObt = hyTestObt + (hyExamObt + (subHasPrac ? hyExamPracObt : 0)) + yTestObt + (yExamObt + (subHasPrac ? yExamPracObt : 0));
-                      const totalMax = hyTestMax + (hyExamMax + (subHasPrac ? hyExamPracMax : 0)) + yTestMax + (yExamMax + (subHasPrac ? yExamPracMax : 0));
+                      const yOralObt = studentMixedMarks[`${sub}:::Yearly Exam:::oralObt`] ?? 0;
+                      const yOralMax = studentMixedMarks[`${sub}:::Yearly Exam:::oralMax`] ?? (yOralObt > 0 ? 20 : 0);
+
+                      const yPracObt = studentMixedMarks[`${sub}:::Yearly Exam:::pracObt`] ?? 0;
+                      const yPracMax = studentMixedMarks[`${sub}:::Yearly Exam:::pracMax`] ?? (subHasPrac ? 30 : (yPracObt > 0 ? 30 : 0));
+
+                      // Totals
+                      const totalObt = hyTestObt + hyExamObt + hyOralObt + hyPracObt + yTestObt + yExamObt + yOralObt + yPracObt;
+                      const totalMax = hyTestMax + hyExamMax + hyOralMax + hyPracMax + yTestMax + yExamMax + yOralMax + yPracMax;
                       const subPct = totalMax > 0 ? Math.round((totalObt / totalMax) * 100) : 0;
 
                       return (
                         <tr key={sub} className="hover:bg-slate-50/60 transition-colors">
-                          <td className="px-3 py-2 font-black text-slate-800 text-xs">
+                          <td className="px-3 py-2 font-black text-slate-800 text-xs border-r border-slate-200">
                             {sub}
                             {subHasPrac && (
-                              <span className="block text-[9px] text-emerald-600 font-bold flex items-center gap-0.5">
-                                <FlaskConical className="w-2.5 h-2.5" /> Practical
+                              <span className="block text-[9px] text-teal-700 font-bold flex items-center gap-0.5">
+                                <FlaskConical className="w-2.5 h-2.5" /> Practical Subject
                               </span>
                             )}
                           </td>
 
                           {/* 1. HY Test */}
-                          <td className="px-3 py-1.5 text-center bg-indigo-50/20 border-l border-r border-indigo-100">
-                            <div className="flex items-center justify-center gap-1">
+                          <td className="px-1 py-1.5 text-center bg-indigo-50/20 border-r border-indigo-100">
+                            <div className="flex items-center justify-center gap-0.5">
                               <input
                                 type="number"
                                 min="0"
                                 max={hyTestMax}
                                 value={hyTestObt}
                                 onChange={e => handleStudentMixedMarkChange(sub, 'Half-Yearly Test', 'obt', Number(e.target.value))}
-                                className="w-14 text-center font-mono font-bold text-xs border border-indigo-300 rounded py-1 bg-white text-indigo-900 focus:outline-none"
+                                className="w-11 text-center font-mono font-black text-xs border border-indigo-300 rounded py-0.5 bg-white text-indigo-900 focus:outline-none"
+                                title="Half-Yearly Test Obtained"
                               />
-                              <span className="text-slate-400 text-xs">/</span>
+                              <span className="text-slate-400 text-[10px]">/</span>
                               <input
                                 type="number"
                                 min="1"
                                 value={hyTestMax}
                                 onChange={e => handleStudentMixedMarkChange(sub, 'Half-Yearly Test', 'max', Number(e.target.value))}
-                                className="w-12 text-center font-mono text-[11px] border border-slate-200 rounded py-1 bg-slate-50 text-slate-600 focus:outline-none"
+                                className="w-9 text-center font-mono text-[10px] border border-slate-200 rounded py-0.5 bg-slate-50 text-slate-600 focus:outline-none"
+                                title="Half-Yearly Test Max Marks"
                               />
                             </div>
                           </td>
 
-                          {/* 2. HY Exam */}
-                          <td className="px-3 py-1.5 text-center bg-blue-50/20 border-r border-blue-100">
-                            <div className="flex flex-col items-center gap-1">
-                              <div className="flex items-center justify-center gap-1">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  max={hyExamMax}
-                                  value={hyExamObt}
-                                  onChange={e => handleStudentMixedMarkChange(sub, 'Half-Yearly Exam', 'obt', Number(e.target.value))}
-                                  className="w-13 text-center font-mono font-bold text-xs border border-blue-300 rounded py-0.5 bg-white text-blue-900 focus:outline-none"
-                                  title="HY Exam Theory Marks"
-                                />
-                                <span className="text-slate-400 text-xs">/</span>
-                                <input
-                                  type="number"
-                                  min="1"
-                                  value={hyExamMax}
-                                  onChange={e => handleStudentMixedMarkChange(sub, 'Half-Yearly Exam', 'max', Number(e.target.value))}
-                                  className="w-11 text-center font-mono text-[11px] border border-slate-200 rounded py-0.5 bg-slate-50 text-slate-600 focus:outline-none"
-                                  title="HY Exam Theory Max"
-                                />
-                              </div>
-                              {subHasPrac && (
-                                <div className="flex items-center justify-center gap-1 text-[9.5px] bg-emerald-50 px-1 py-0.5 rounded border border-emerald-200">
-                                  <span className="text-emerald-800 font-bold">Prac:</span>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    max={hyExamPracMax}
-                                    value={hyExamPracObt}
-                                    onChange={e => handleStudentMixedMarkChange(sub, 'Half-Yearly Exam', 'pracObt', Number(e.target.value))}
-                                    className="w-10 text-center font-mono font-bold text-[10.5px] border border-emerald-300 rounded bg-white text-emerald-900"
-                                  />
-                                  <span>/</span>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    value={hyExamPracMax}
-                                    onChange={e => handleStudentMixedMarkChange(sub, 'Half-Yearly Exam', 'pracMax', Number(e.target.value))}
-                                    className="w-9 text-center font-mono text-[9.5px] border border-emerald-200 rounded bg-emerald-100 text-emerald-900"
-                                  />
-                                </div>
-                              )}
+                          {/* 2. HY Written */}
+                          <td className="px-1 py-1.5 text-center bg-blue-50/20 border-r border-blue-100">
+                            <div className="flex items-center justify-center gap-0.5">
+                              <input
+                                type="number"
+                                min="0"
+                                max={hyExamMax}
+                                value={hyExamObt}
+                                onChange={e => handleStudentMixedMarkChange(sub, 'Half-Yearly Exam', 'obt', Number(e.target.value))}
+                                className="w-12 text-center font-mono font-black text-xs border border-blue-300 rounded py-0.5 bg-white text-blue-900 focus:outline-none"
+                                title="Half-Yearly Written Obtained"
+                              />
+                              <span className="text-slate-400 text-[10px]">/</span>
+                              <input
+                                type="number"
+                                min="1"
+                                value={hyExamMax}
+                                onChange={e => handleStudentMixedMarkChange(sub, 'Half-Yearly Exam', 'max', Number(e.target.value))}
+                                className="w-10 text-center font-mono text-[10px] border border-slate-200 rounded py-0.5 bg-slate-50 text-slate-600 focus:outline-none"
+                                title="Half-Yearly Written Max Marks"
+                              />
                             </div>
                           </td>
 
-                          {/* 3. Yearly Test */}
-                          <td className="px-3 py-1.5 text-center bg-amber-50/20 border-r border-amber-100">
-                            <div className="flex items-center justify-center gap-1">
+                          {/* 3. HY Oral */}
+                          <td className="px-1 py-1.5 text-center bg-amber-50/25 border-r border-amber-100">
+                            <div className="flex items-center justify-center gap-0.5">
+                              <input
+                                type="number"
+                                min="0"
+                                max={hyOralMax > 0 ? hyOralMax : 100}
+                                value={hyOralObt}
+                                onChange={e => handleStudentMixedMarkChange(sub, 'Half-Yearly Exam', 'oralObt', Number(e.target.value))}
+                                className="w-11 text-center font-mono font-bold text-xs border border-amber-300 rounded py-0.5 bg-white text-amber-950 focus:outline-none"
+                                title="Half-Yearly Oral Obtained"
+                              />
+                              <span className="text-slate-400 text-[10px]">/</span>
+                              <input
+                                type="number"
+                                min="0"
+                                value={hyOralMax}
+                                onChange={e => handleStudentMixedMarkChange(sub, 'Half-Yearly Exam', 'oralMax', Number(e.target.value))}
+                                className="w-9 text-center font-mono text-[10px] border border-amber-200 rounded py-0.5 bg-amber-50 text-amber-900 focus:outline-none"
+                                title="Half-Yearly Oral Max Marks"
+                              />
+                            </div>
+                          </td>
+
+                          {/* 4. HY Practical */}
+                          <td className="px-1 py-1.5 text-center bg-teal-50/25 border-r-2 border-slate-300">
+                            <div className="flex items-center justify-center gap-0.5">
+                              <input
+                                type="number"
+                                min="0"
+                                max={hyPracMax > 0 ? hyPracMax : 100}
+                                value={hyPracObt}
+                                onChange={e => handleStudentMixedMarkChange(sub, 'Half-Yearly Exam', 'pracObt', Number(e.target.value))}
+                                className="w-11 text-center font-mono font-bold text-xs border border-teal-300 rounded py-0.5 bg-white text-teal-950 focus:outline-none"
+                                title="Half-Yearly Practical Obtained"
+                              />
+                              <span className="text-slate-400 text-[10px]">/</span>
+                              <input
+                                type="number"
+                                min="0"
+                                value={hyPracMax}
+                                onChange={e => handleStudentMixedMarkChange(sub, 'Half-Yearly Exam', 'pracMax', Number(e.target.value))}
+                                className="w-9 text-center font-mono text-[10px] border border-teal-200 rounded py-0.5 bg-teal-50 text-teal-900 focus:outline-none"
+                                title="Half-Yearly Practical Max Marks"
+                              />
+                            </div>
+                          </td>
+
+                          {/* 5. Yearly Test */}
+                          <td className="px-1 py-1.5 text-center bg-indigo-50/20 border-r border-indigo-100">
+                            <div className="flex items-center justify-center gap-0.5">
                               <input
                                 type="number"
                                 min="0"
                                 max={yTestMax}
                                 value={yTestObt}
                                 onChange={e => handleStudentMixedMarkChange(sub, 'Yearly Test', 'obt', Number(e.target.value))}
-                                className="w-14 text-center font-mono font-bold text-xs border border-amber-300 rounded py-1 bg-white text-amber-900 focus:outline-none"
+                                className="w-11 text-center font-mono font-black text-xs border border-indigo-300 rounded py-0.5 bg-white text-indigo-900 focus:outline-none"
+                                title="Yearly Test Obtained"
                               />
-                              <span className="text-slate-400 text-xs">/</span>
+                              <span className="text-slate-400 text-[10px]">/</span>
                               <input
                                 type="number"
                                 min="1"
                                 value={yTestMax}
                                 onChange={e => handleStudentMixedMarkChange(sub, 'Yearly Test', 'max', Number(e.target.value))}
-                                className="w-12 text-center font-mono text-[11px] border border-slate-200 rounded py-1 bg-slate-50 text-slate-600 focus:outline-none"
+                                className="w-9 text-center font-mono text-[10px] border border-slate-200 rounded py-0.5 bg-slate-50 text-slate-600 focus:outline-none"
+                                title="Yearly Test Max Marks"
                               />
                             </div>
                           </td>
 
-                          {/* 4. Yearly Exam */}
-                          <td className="px-3 py-1.5 text-center bg-emerald-50/20 border-r border-emerald-100">
-                            <div className="flex flex-col items-center gap-1">
-                              <div className="flex items-center justify-center gap-1">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  max={yExamMax}
-                                  value={yExamObt}
-                                  onChange={e => handleStudentMixedMarkChange(sub, 'Yearly Exam', 'obt', Number(e.target.value))}
-                                  className="w-13 text-center font-mono font-bold text-xs border border-emerald-300 rounded py-0.5 bg-white text-emerald-900 focus:outline-none"
-                                  title="Yearly Exam Theory Marks"
-                                />
-                                <span className="text-slate-400 text-xs">/</span>
-                                <input
-                                  type="number"
-                                  min="1"
-                                  value={yExamMax}
-                                  onChange={e => handleStudentMixedMarkChange(sub, 'Yearly Exam', 'max', Number(e.target.value))}
-                                  className="w-11 text-center font-mono text-[11px] border border-slate-200 rounded py-0.5 bg-slate-50 text-slate-600 focus:outline-none"
-                                  title="Yearly Exam Theory Max"
-                                />
-                              </div>
-                              {subHasPrac && (
-                                <div className="flex items-center justify-center gap-1 text-[9.5px] bg-emerald-50 px-1 py-0.5 rounded border border-emerald-200">
-                                  <span className="text-emerald-800 font-bold">Prac:</span>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    max={yExamPracMax}
-                                    value={yExamPracObt}
-                                    onChange={e => handleStudentMixedMarkChange(sub, 'Yearly Exam', 'pracObt', Number(e.target.value))}
-                                    className="w-10 text-center font-mono font-bold text-[10.5px] border border-emerald-300 rounded bg-white text-emerald-900"
-                                  />
-                                  <span>/</span>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    value={yExamPracMax}
-                                    onChange={e => handleStudentMixedMarkChange(sub, 'Yearly Exam', 'pracMax', Number(e.target.value))}
-                                    className="w-9 text-center font-mono text-[9.5px] border border-emerald-200 rounded bg-emerald-100 text-emerald-900"
-                                  />
-                                </div>
-                              )}
+                          {/* 6. Yearly Written */}
+                          <td className="px-1 py-1.5 text-center bg-blue-50/20 border-r border-blue-100">
+                            <div className="flex items-center justify-center gap-0.5">
+                              <input
+                                type="number"
+                                min="0"
+                                max={yExamMax}
+                                value={yExamObt}
+                                onChange={e => handleStudentMixedMarkChange(sub, 'Yearly Exam', 'obt', Number(e.target.value))}
+                                className="w-12 text-center font-mono font-black text-xs border border-blue-300 rounded py-0.5 bg-white text-blue-900 focus:outline-none"
+                                title="Yearly Written Obtained"
+                              />
+                              <span className="text-slate-400 text-[10px]">/</span>
+                              <input
+                                type="number"
+                                min="1"
+                                value={yExamMax}
+                                onChange={e => handleStudentMixedMarkChange(sub, 'Yearly Exam', 'max', Number(e.target.value))}
+                                className="w-10 text-center font-mono text-[10px] border border-slate-200 rounded py-0.5 bg-slate-50 text-slate-600 focus:outline-none"
+                                title="Yearly Written Max Marks"
+                              />
+                            </div>
+                          </td>
+
+                          {/* 7. Yearly Oral */}
+                          <td className="px-1 py-1.5 text-center bg-amber-50/25 border-r border-amber-100">
+                            <div className="flex items-center justify-center gap-0.5">
+                              <input
+                                type="number"
+                                min="0"
+                                max={yOralMax > 0 ? yOralMax : 100}
+                                value={yOralObt}
+                                onChange={e => handleStudentMixedMarkChange(sub, 'Yearly Exam', 'oralObt', Number(e.target.value))}
+                                className="w-11 text-center font-mono font-bold text-xs border border-amber-300 rounded py-0.5 bg-white text-amber-950 focus:outline-none"
+                                title="Yearly Oral Obtained"
+                              />
+                              <span className="text-slate-400 text-[10px]">/</span>
+                              <input
+                                type="number"
+                                min="0"
+                                value={yOralMax}
+                                onChange={e => handleStudentMixedMarkChange(sub, 'Yearly Exam', 'oralMax', Number(e.target.value))}
+                                className="w-9 text-center font-mono text-[10px] border border-amber-200 rounded py-0.5 bg-amber-50 text-amber-900 focus:outline-none"
+                                title="Yearly Oral Max Marks"
+                              />
+                            </div>
+                          </td>
+
+                          {/* 8. Yearly Practical */}
+                          <td className="px-1 py-1.5 text-center bg-teal-50/25 border-r-2 border-slate-300">
+                            <div className="flex items-center justify-center gap-0.5">
+                              <input
+                                type="number"
+                                min="0"
+                                max={yPracMax > 0 ? yPracMax : 100}
+                                value={yPracObt}
+                                onChange={e => handleStudentMixedMarkChange(sub, 'Yearly Exam', 'pracObt', Number(e.target.value))}
+                                className="w-11 text-center font-mono font-bold text-xs border border-teal-300 rounded py-0.5 bg-white text-teal-950 focus:outline-none"
+                                title="Yearly Practical Obtained"
+                              />
+                              <span className="text-slate-400 text-[10px]">/</span>
+                              <input
+                                type="number"
+                                min="0"
+                                value={yPracMax}
+                                onChange={e => handleStudentMixedMarkChange(sub, 'Yearly Exam', 'pracMax', Number(e.target.value))}
+                                className="w-9 text-center font-mono text-[10px] border border-teal-200 rounded py-0.5 bg-teal-50 text-teal-900 focus:outline-none"
+                                title="Yearly Practical Max Marks"
+                              />
                             </div>
                           </td>
 
                           {/* Total / % */}
-                          <td className="px-3 py-2 text-center bg-slate-50 font-mono font-bold text-xs">
-                            <span className="text-slate-800">{totalObt}</span>
-                            <span className="text-slate-400 text-[10px]"> / {totalMax}</span>
-                            <span className={`block text-[9px] font-extrabold ${subPct >= 33 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                          <td className="px-2 py-2 text-center bg-slate-50 font-mono font-bold text-xs">
+                            <span className="text-slate-900 font-black">{totalObt}</span>
+                            <span className="text-slate-500 text-[10px]"> / {totalMax}</span>
+                            <span className={`block text-[9.5px] font-black ${subPct >= 33 ? 'text-emerald-700' : 'text-rose-700'}`}>
                               ({subPct}%)
                             </span>
                           </td>

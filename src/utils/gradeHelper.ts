@@ -143,11 +143,12 @@ export function getDefaultSubjectsForGrade(gradeStr?: string | null, stream?: st
  * Normalizes subject names across various formats, abbreviations, and languages
  */
 export function normalizeSubject(subject?: string | null): string {
-  if (!subject) return 'General';
+  if (!subject) return '';
   const clean = subject.toString().trim();
-  if (!clean) return 'General';
+  if (!clean) return '';
 
   const subLower = clean.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!subLower) return clean;
 
   if (/^math/.test(subLower)) return 'Mathematics';
   if (/^hindi/.test(subLower)) return 'Hindi';
@@ -156,7 +157,7 @@ export function normalizeSubject(subject?: string | null): string {
   if (/^soc|^sst|^social/.test(subLower)) return 'Social Science';
   if (/^sans/.test(subLower)) return 'Sanskrit';
   if (/^draw|^art|^craft/.test(subLower)) return 'Drawing';
-  if (/^gk|^general|^moral/.test(subLower)) return 'G.K Moral';
+  if (/^gk|^moral|^genknow|^generalknowledge/.test(subLower)) return 'G.K Moral';
   if (/^reas/.test(subLower)) return 'Reasoning';
   if (/^pt|^physic/.test(subLower) && !subLower.includes('physics')) return 'P.T.';
   if (/^comp|^it$/.test(subLower)) return 'Computer Science';
@@ -181,8 +182,14 @@ export function normalizeSubject(subject?: string | null): string {
  */
 export function isSameSubject(s1?: string | null, s2?: string | null): boolean {
   if (!s1 || !s2) return false;
-  if (s1.trim().toLowerCase() === s2.trim().toLowerCase()) return true;
-  return normalizeSubject(s1).toLowerCase() === normalizeSubject(s2).toLowerCase();
+  const c1 = s1.trim();
+  const c2 = s2.trim();
+  if (!c1 || !c2) return false;
+  if (c1.toLowerCase() === c2.toLowerCase()) return true;
+  const n1 = normalizeSubject(c1);
+  const n2 = normalizeSubject(c2);
+  if (!n1 || !n2) return false;
+  return n1.toLowerCase() === n2.toLowerCase();
 }
 
 /**

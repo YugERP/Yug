@@ -175,7 +175,7 @@ export interface Student extends User {
   hasPreviousClass?: boolean;
   previousClass?: string;
   photoUrl?: string; // used interchangeably with docStudentPhoto/photoUrl
-  reportCardTemplate?: 'classic_portrait' | 'landscape_new' | 'nursery_kg' | 'nursery_kg_landscape';
+  reportCardTemplate?: 'classic_portrait' | 'paper_i_ii_portrait' | 'landscape_new' | 'paper_i_ii_landscape' | 'nursery_kg' | 'nursery_kg_landscape';
 }
 
 export interface Teacher extends User {
@@ -204,9 +204,12 @@ export type ExamType =
   | 'Half-Yearly Test' 
   | 'Half-Yearly Exam' 
   | 'Half-Yearly Practical'
+  | 'Half-Yearly Oral'
   | 'Yearly Test' 
   | 'Yearly Exam' 
   | 'Yearly Practical'
+  | 'Yearly Oral'
+  | 'Oral Exam'
   | 'Practical Exam';
 
 export interface ExamMark {
@@ -218,6 +221,8 @@ export interface ExamMark {
   subject: string;
   marksObtained: number; // Theory / Written marks obtained
   maxMarks: number; // Theory / Written max marks
+  oralMarks?: number; // Oral marks obtained (for languages, junior classes, or separate viva)
+  oralMaxMarks?: number; // Oral maximum marks
   practicalMarks?: number; // Practical / Experimental marks obtained (e.g. for Home Science, Science, Computer, Drawing, etc.)
   practicalMaxMarks?: number; // Practical maximum marks (e.g. 30, 20, 10, etc.)
   date: string;

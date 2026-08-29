@@ -1,7 +1,7 @@
 import React from 'react';
 import { type ReportCardCommonProps, getSchoolNameStyle, getAddressStyle, getDynamicScaling, displayVal } from './types';
 
-export const LandscapeProTemplate: React.FC<ReportCardCommonProps> = ({
+export const PaperLandscapeTemplate: React.FC<ReportCardCommonProps> = ({
   student,
   currentSchool,
   sessionToUse,
@@ -31,18 +31,18 @@ export const LandscapeProTemplate: React.FC<ReportCardCommonProps> = ({
     <div className="w-full">
       {/* Top Header Block */}
       <div>
-        {/* Header section with UDISE */}
-        <div className="flex justify-end items-center font-serif text-[9px] font-black text-[#CC0000] uppercase tracking-wider mb-0.5">
+        <div className="flex justify-between items-center font-serif text-[9px] font-black text-[#CC0000] uppercase tracking-wider mb-0.5">
+          <div className="text-slate-700">ACADEMIC EVALUATION TRANSCRIPT</div>
           <div>UDISE CODE-{currentSchool?.udiseCode || '09040803605'}</div>
         </div>
 
-        {/* School Logo, Name & Address */}
-        <div className="flex items-center justify-center gap-3 mb-1">
+        {/* School Logo & Info */}
+        <div className="flex items-center justify-between gap-3 mb-1">
           {currentSchool?.logo && (
             <img 
               src={currentSchool.logo} 
               alt="School Logo" 
-              className="w-12 h-12 sm:w-14 sm:h-14 object-contain shrink-0" 
+              className="w-12 h-12 object-contain shrink-0" 
               referrerPolicy="no-referrer"
             />
           )}
@@ -59,23 +59,20 @@ export const LandscapeProTemplate: React.FC<ReportCardCommonProps> = ({
             >
               {currentSchool?.address || 'MILAK BHOLA SINGH SONAKPUR MORADABAD-244001'}
             </p>
-            <p className="font-bold text-[#002060] text-[8px] sm:text-[9px] uppercase tracking-wider mt-0.5">
+            <p className="font-bold text-[#002060] text-[8px] uppercase tracking-wider mt-0.5">
               Contact No: {currentSchool?.mobile || '9411833501, 8057283623'}
               {currentSchool?.altMobile ? `, ${currentSchool.altMobile}` : ''}
             </p>
           </div>
-          {currentSchool?.logo && <div className="w-12 h-12 sm:w-14 sm:h-14 shrink-0 hidden sm:block"></div>}
+          {currentSchool?.logo && <div className="w-12 h-12 shrink-0 hidden sm:block"></div>}
         </div>
 
-        {/* Double decorative horizontal header separator */}
-        <div className="border-t border-[#002060] py-0.5 my-0.5"></div>
-
-        {/* REPORT CARD Pill & Session */}
-        <div className="flex justify-between items-center px-4 my-1">
+        {/* Center Badge */}
+        <div className="flex items-center justify-between border-y-2 border-[#002060] py-0.5 my-0.5">
           <span className="font-serif text-[#002060] text-[9.5px] font-extrabold tracking-widest uppercase">
-            ACADEMIC SESSION {sessionToUse}
+            SESSION: {sessionToUse}
           </span>
-          <div className="px-4 py-0.5 bg-[#002060] text-white rounded border border-white font-serif text-[11.5px] font-black tracking-widest uppercase shadow-sm">
+          <div className="px-4 py-0.5 bg-[#002060] text-white rounded font-serif text-[11px] font-black tracking-widest uppercase shadow-xs">
             REPORT CARD
           </div>
           <span className="font-serif text-[#002060] text-[9.5px] font-extrabold tracking-widest uppercase">
@@ -154,27 +151,29 @@ export const LandscapeProTemplate: React.FC<ReportCardCommonProps> = ({
             <table className={`w-full table-fixed border-2 border-[#002060] text-center ${dyn.tableText} font-serif border-collapse`}>
               <thead>
                 <tr className="border-b-2 border-[#002060] bg-slate-50">
-                  <th rowSpan={2} className={`border-r-2 border-[#002060] ${dyn.cellPy} ${dyn.cellPx} text-center align-middle text-slate-800 font-black w-[18%]`}>SUBJECT</th>
-                  <th colSpan={5} className={`border-r-2 border-[#002060] ${dyn.cellPy} text-center font-extrabold text-[#002060] uppercase bg-slate-50 ${dyn.tableHeader}`}>HALF YEARLY EXAM</th>
-                  <th colSpan={5} className={`border-r-2 border-[#002060] ${dyn.cellPy} text-center font-extrabold text-[#002060] uppercase bg-slate-50 ${dyn.tableHeader}`}>ANNUAL EXAM</th>
+                  <th rowSpan={2} className={`border-r-2 border-[#002060] ${dyn.cellPy} ${dyn.cellPx} text-center align-middle text-slate-800 font-black w-[16%]`}>SUBJECT</th>
+                  <th colSpan={6} className={`border-r-2 border-[#002060] ${dyn.cellPy} text-center font-extrabold text-[#002060] uppercase bg-slate-50 ${dyn.tableHeader}`}>HALF YEARLY EXAM</th>
+                  <th colSpan={6} className={`border-r-2 border-[#002060] ${dyn.cellPy} text-center font-extrabold text-[#002060] uppercase bg-slate-50 ${dyn.tableHeader}`}>ANNUAL EXAM</th>
                   <th colSpan={3} className={`p-0.5 text-center font-extrabold text-[#002060] uppercase bg-slate-50 ${dyn.tableHeader}`}>FINAL</th>
                 </tr>
                 <tr className={`border-b-2 border-[#002060] ${dyn.tableSubHeader} font-bold text-slate-700 bg-slate-50/50`}>
-                  <th className="border-r border-[#002060] p-0.5 w-[5.5%]">TEST (10)</th>
-                  <th className="border-r border-[#002060] p-0.5 w-[7%]">WRIT.</th>
-                  <th className="border-r border-[#002060] p-0.5 w-[5.5%] text-indigo-900 bg-indigo-50/40">PRAC.</th>
-                  <th className="border-r border-[#002060] p-0.5 w-[6.5%] text-slate-700">MAX</th>
-                  <th className="border-r-2 border-[#002060] p-0.5 w-[7.5%] text-[#002060]">OBT.</th>
+                  <th className="border-r border-[#002060] p-0.5 w-[4.8%]">TEST (10)</th>
+                  <th className="border-r border-[#002060] p-0.5 w-[5.8%] text-indigo-900 bg-indigo-50/30">I</th>
+                  <th className="border-r border-[#002060] p-0.5 w-[4.8%] text-amber-900 bg-amber-50/30">II</th>
+                  <th className="border-r border-[#002060] p-0.5 w-[4.8%] text-emerald-900 bg-emerald-50/30">PRAC.</th>
+                  <th className="border-r border-[#002060] p-0.5 w-[5.6%] text-slate-700">MAX</th>
+                  <th className="border-r-2 border-[#002060] p-0.5 w-[6.2%] text-[#002060]">OBT.</th>
 
-                  <th className="border-r border-[#002060] p-0.5 w-[5.5%]">TEST (10)</th>
-                  <th className="border-r border-[#002060] p-0.5 w-[7%]">WRIT.</th>
-                  <th className="border-r border-[#002060] p-0.5 w-[5.5%] text-indigo-900 bg-indigo-50/40">PRAC.</th>
-                  <th className="border-r border-[#002060] p-0.5 w-[6.5%] text-slate-700">MAX</th>
-                  <th className="border-r-2 border-[#002060] p-0.5 w-[7.5%] text-[#002060]">OBT.</th>
+                  <th className="border-r border-[#002060] p-0.5 w-[4.8%]">TEST (10)</th>
+                  <th className="border-r border-[#002060] p-0.5 w-[5.8%] text-indigo-900 bg-indigo-50/30">I</th>
+                  <th className="border-r border-[#002060] p-0.5 w-[4.8%] text-amber-900 bg-amber-50/30">II</th>
+                  <th className="border-r border-[#002060] p-0.5 w-[4.8%] text-emerald-900 bg-emerald-50/30">PRAC.</th>
+                  <th className="border-r border-[#002060] p-0.5 w-[5.6%] text-slate-700">MAX</th>
+                  <th className="border-r-2 border-[#002060] p-0.5 w-[6.2%] text-[#002060]">OBT.</th>
 
-                  <th className="border-r border-[#002060] p-0.5 w-[6%]">MAX</th>
-                  <th className="border-r border-[#002060] p-0.5 w-[6.5%] text-[#002060]">OBT.</th>
-                  <th className="p-0.5 w-[5.5%] text-indigo-700">GRD</th>
+                  <th className="border-r border-[#002060] p-0.5 w-[6.5%]">MAX</th>
+                  <th className="border-r border-[#002060] p-0.5 w-[7.5%] text-[#002060]">OBT.</th>
+                  <th className="p-0.5 w-[6%] text-indigo-700">GRD</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#002060]">
@@ -184,16 +183,22 @@ export const LandscapeProTemplate: React.FC<ReportCardCommonProps> = ({
                       {sub.subject}
                     </td>
                     <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono`}>{displayVal(sub.hyTestExists, sub.hyTestVal)}</td>
-                    <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono`}>{displayVal(sub.hyExamExists, sub.hyExamVal)}</td>
-                    <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-indigo-900 bg-indigo-50/20`}>
+                    <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-indigo-900 bg-indigo-50/10`}>{displayVal(sub.hyExamExists, sub.hyExamVal)}</td>
+                    <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-amber-900 bg-amber-50/20`}>
+                      {sub.hyOralExists || sub.hyOralVal > 0 ? displayVal(sub.hyOralExists, sub.hyOralVal) : '-'}
+                    </td>
+                    <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-emerald-900 bg-emerald-50/20`}>
                       {sub.hyPracExists || sub.hyPracVal > 0 || sub.isSubjectPractical ? displayVal(sub.hyPracExists, sub.hyPracVal) : '-'}
                     </td>
                     <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-slate-500`}>{sub.hasHy ? sub.hyMax : ''}</td>
                     <td className={`border-r-2 border-[#002060] ${dyn.cellPy} p-0.5 font-black text-center font-mono text-slate-900 bg-indigo-50/10`}>{sub.hasHy ? sub.hyObt : ''}</td>
                     
                     <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono`}>{displayVal(sub.yTestExists, sub.yTestVal)}</td>
-                    <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono`}>{displayVal(sub.yExamExists, sub.yExamVal)}</td>
-                    <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-indigo-900 bg-indigo-50/20`}>
+                    <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-indigo-900 bg-indigo-50/10`}>{displayVal(sub.yExamExists, sub.yExamVal)}</td>
+                    <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-amber-900 bg-amber-50/20`}>
+                      {sub.yOralExists || sub.yOralVal > 0 ? displayVal(sub.yOralExists, sub.yOralVal) : '-'}
+                    </td>
+                    <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-emerald-900 bg-emerald-50/20`}>
                       {sub.yPracExists || sub.yPracVal > 0 || sub.isSubjectPractical ? displayVal(sub.yPracExists, sub.yPracVal) : '-'}
                     </td>
                     <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-slate-500`}>{sub.hasY ? sub.yMax : ''}</td>
@@ -211,8 +216,10 @@ export const LandscapeProTemplate: React.FC<ReportCardCommonProps> = ({
                   <td className="border-r border-[#002060] p-0.5"></td>
                   <td className="border-r border-[#002060] p-0.5"></td>
                   <td className="border-r border-[#002060] p-0.5"></td>
+                  <td className="border-r border-[#002060] p-0.5"></td>
                   <td className="border-r border-[#002060] p-0.5 font-mono text-slate-600">{totalHyMax > 0 ? totalHyMax : ''}</td>
                   <td className="border-r-2 border-[#002060] p-0.5 font-mono text-slate-900">{totalHyObt > 0 ? totalHyObt : ''}</td>
+                  <td className="border-r border-[#002060] p-0.5"></td>
                   <td className="border-r border-[#002060] p-0.5"></td>
                   <td className="border-r border-[#002060] p-0.5"></td>
                   <td className="border-r border-[#002060] p-0.5"></td>

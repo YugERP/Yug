@@ -7,21 +7,27 @@ export interface SubjectRowData {
   hasHy: boolean;
   hasY: boolean;
   hasAny: boolean;
+  hasHyOral: boolean;
   hasHyPrac: boolean;
+  hasYOral: boolean;
   hasYPrac: boolean;
   hyTestVal: number;
   hyExamVal: number;
+  hyOralVal: number;
   hyPracVal: number;
   hyTestMax: number;
   hyExamMax: number;
+  hyOralMax: number;
   hyPracMax: number;
   hyMax: number;
   hyObt: number;
   yTestVal: number;
   yExamVal: number;
+  yOralVal: number;
   yPracVal: number;
   yTestMax: number;
   yExamMax: number;
+  yOralMax: number;
   yPracMax: number;
   yMax: number;
   yObt: number;
@@ -30,9 +36,11 @@ export interface SubjectRowData {
   grade: string;
   hyTestExists: boolean;
   hyExamExists: boolean;
+  hyOralExists: boolean;
   hyPracExists: boolean;
   yTestExists: boolean;
   yExamExists: boolean;
+  yOralExists: boolean;
   yPracExists: boolean;
 }
 

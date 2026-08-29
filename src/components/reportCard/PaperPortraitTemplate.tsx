@@ -1,7 +1,7 @@
 import React from 'react';
 import { type ReportCardCommonProps, getSchoolNameStyle, getAddressStyle, getDynamicScaling, displayVal } from './types';
 
-export const ClassicPortraitTemplate: React.FC<ReportCardCommonProps> = ({
+export const PaperPortraitTemplate: React.FC<ReportCardCommonProps> = ({
   student,
   currentSchool,
   sessionToUse,
@@ -146,33 +146,37 @@ export const ClassicPortraitTemplate: React.FC<ReportCardCommonProps> = ({
         </div>
       </div>
 
-      {/* Subjects & Marks Grid table (No horizontal scrollbars, exact 100% table-fixed layout) */}
+      {/* Subjects & Marks Grid table (Paper I & II mode) */}
       <div className="w-full my-1">
         <table className={`w-full table-fixed border-2 border-[#002060] text-center ${dyn.tableText} font-serif border-collapse`}>
           <thead>
             <tr className="border-b-2 border-[#002060] bg-slate-50">
-              <th rowSpan={2} className={`border-r-2 border-[#002060] ${dyn.cellPy} ${dyn.cellPx} text-center align-middle text-slate-800 font-black w-[18%]`}>SUBJECT</th>
-              <th colSpan={5} className={`border-r-2 border-[#002060] ${dyn.cellPy} text-center font-extrabold text-[#002060] uppercase bg-slate-50 ${dyn.tableHeader}`}>HALF YEARLY EXAMINATION</th>
-              <th colSpan={5} className={`border-r-2 border-[#002060] ${dyn.cellPy} text-center font-extrabold text-[#002060] uppercase bg-slate-50 ${dyn.tableHeader}`}>ANNUAL EXAMINATION</th>
+              <th rowSpan={2} className={`border-r-2 border-[#002060] ${dyn.cellPy} ${dyn.cellPx} text-center align-middle text-slate-800 font-black w-[16%]`}>SUBJECT</th>
+              <th colSpan={6} className={`border-r-2 border-[#002060] ${dyn.cellPy} text-center font-extrabold text-[#002060] uppercase bg-slate-50 ${dyn.tableHeader}`}>HALF YEARLY EXAMINATION</th>
+              <th colSpan={6} className={`border-r-2 border-[#002060] ${dyn.cellPy} text-center font-extrabold text-[#002060] uppercase bg-slate-50 ${dyn.tableHeader}`}>ANNUAL EXAMINATION</th>
               <th colSpan={3} className={`p-0.5 text-center font-extrabold text-[#002060] uppercase bg-slate-50 ${dyn.tableHeader}`}>FINAL EVALUATION</th>
             </tr>
             <tr className={`border-b-2 border-[#002060] ${dyn.tableSubHeader} font-bold text-slate-700 bg-slate-50/50`}>
               {/* Half Yearly columns (32%) */}
-              <th className="border-r border-[#002060] p-0.5 w-[5.5%]">TEST<br/>(10)</th>
-              <th className="border-r border-[#002060] p-0.5 w-[7%]">WRIT.</th>
-              <th className="border-r border-[#002060] p-0.5 w-[5.5%] text-indigo-900 bg-indigo-50/40">PRAC.</th>
-              <th className="border-r border-[#002060] p-0.5 w-[6.5%] text-slate-700">MAX</th>
-              <th className="border-r-2 border-[#002060] p-0.5 w-[7.5%] text-[#002060]">OBT.</th>
+              <th className="border-r border-[#002060] p-0.5 w-[4.8%]">TEST<br/>(10)</th>
+              <th className="border-r border-[#002060] p-0.5 w-[5.8%] text-indigo-900 bg-indigo-50/30">I</th>
+              <th className="border-r border-[#002060] p-0.5 w-[4.8%] text-amber-900 bg-amber-50/30">II</th>
+              <th className="border-r border-[#002060] p-0.5 w-[4.8%] text-emerald-900 bg-emerald-50/30">PRAC.</th>
+              <th className="border-r border-[#002060] p-0.5 w-[5.6%] text-slate-700">MAX</th>
+              <th className="border-r-2 border-[#002060] p-0.5 w-[6.2%] text-[#002060]">OBT.</th>
+
               {/* Annual columns (32%) */}
-              <th className="border-r border-[#002060] p-0.5 w-[5.5%]">TEST<br/>(10)</th>
-              <th className="border-r border-[#002060] p-0.5 w-[7%]">WRIT.</th>
-              <th className="border-r border-[#002060] p-0.5 w-[5.5%] text-indigo-900 bg-indigo-50/40">PRAC.</th>
-              <th className="border-r border-[#002060] p-0.5 w-[6.5%] text-slate-700">MAX</th>
-              <th className="border-r-2 border-[#002060] p-0.5 w-[7.5%] text-[#002060]">OBT.</th>
-              {/* Final columns (18%) */}
-              <th className="border-r border-[#002060] p-0.5 w-[6%]">MAX</th>
-              <th className="border-r border-[#002060] p-0.5 w-[6.5%] text-[#002060]">OBT.</th>
-              <th className="p-0.5 w-[5.5%] text-indigo-700">GRADE</th>
+              <th className="border-r border-[#002060] p-0.5 w-[4.8%]">TEST<br/>(10)</th>
+              <th className="border-r border-[#002060] p-0.5 w-[5.8%] text-indigo-900 bg-indigo-50/30">I</th>
+              <th className="border-r border-[#002060] p-0.5 w-[4.8%] text-amber-900 bg-amber-50/30">II</th>
+              <th className="border-r border-[#002060] p-0.5 w-[4.8%] text-emerald-900 bg-emerald-50/30">PRAC.</th>
+              <th className="border-r border-[#002060] p-0.5 w-[5.6%] text-slate-700">MAX</th>
+              <th className="border-r-2 border-[#002060] p-0.5 w-[6.2%] text-[#002060]">OBT.</th>
+
+              {/* Final columns (20%) */}
+              <th className="border-r border-[#002060] p-0.5 w-[6.5%]">MAX</th>
+              <th className="border-r border-[#002060] p-0.5 w-[7.5%] text-[#002060]">OBT.</th>
+              <th className="p-0.5 w-[6%] text-indigo-700">GRADE</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#002060]">
@@ -182,16 +186,22 @@ export const ClassicPortraitTemplate: React.FC<ReportCardCommonProps> = ({
                   {sub.subject}
                 </td>
                 <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono`}>{displayVal(sub.hyTestExists, sub.hyTestVal)}</td>
-                <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono`}>{displayVal(sub.hyExamExists, sub.hyExamVal)}</td>
-                <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-indigo-900 bg-indigo-50/20`}>
+                <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-indigo-900 bg-indigo-50/10`}>{displayVal(sub.hyExamExists, sub.hyExamVal)}</td>
+                <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-amber-900 bg-amber-50/20`}>
+                  {sub.hyOralExists || sub.hyOralVal > 0 ? displayVal(sub.hyOralExists, sub.hyOralVal) : '-'}
+                </td>
+                <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-emerald-900 bg-emerald-50/20`}>
                   {sub.hyPracExists || sub.hyPracVal > 0 || sub.isSubjectPractical ? displayVal(sub.hyPracExists, sub.hyPracVal) : '-'}
                 </td>
                 <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-slate-500`}>{sub.hasHy ? sub.hyMax : ''}</td>
                 <td className={`border-r-2 border-[#002060] ${dyn.cellPy} p-0.5 font-black text-center font-mono text-slate-900 bg-indigo-50/10`}>{sub.hasHy ? sub.hyObt : ''}</td>
                 
                 <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono`}>{displayVal(sub.yTestExists, sub.yTestVal)}</td>
-                <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono`}>{displayVal(sub.yExamExists, sub.yExamVal)}</td>
-                <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-indigo-900 bg-indigo-50/20`}>
+                <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-indigo-900 bg-indigo-50/10`}>{displayVal(sub.yExamExists, sub.yExamVal)}</td>
+                <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-amber-900 bg-amber-50/20`}>
+                  {sub.yOralExists || sub.yOralVal > 0 ? displayVal(sub.yOralExists, sub.yOralVal) : '-'}
+                </td>
+                <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-emerald-900 bg-emerald-50/20`}>
                   {sub.yPracExists || sub.yPracVal > 0 || sub.isSubjectPractical ? displayVal(sub.yPracExists, sub.yPracVal) : '-'}
                 </td>
                 <td className={`border-r border-[#002060] ${dyn.cellPy} p-0.5 font-bold text-center font-mono text-slate-500`}>{sub.hasY ? sub.yMax : ''}</td>
@@ -209,8 +219,10 @@ export const ClassicPortraitTemplate: React.FC<ReportCardCommonProps> = ({
               <td className="border-r border-[#002060] p-0.5"></td>
               <td className="border-r border-[#002060] p-0.5"></td>
               <td className="border-r border-[#002060] p-0.5"></td>
+              <td className="border-r border-[#002060] p-0.5"></td>
               <td className="border-r border-[#002060] p-0.5 font-mono text-slate-600">{totalHyMax > 0 ? totalHyMax : ''}</td>
               <td className="border-r-2 border-[#002060] p-0.5 font-mono text-slate-900">{totalHyObt > 0 ? totalHyObt : ''}</td>
+              <td className="border-r border-[#002060] p-0.5"></td>
               <td className="border-r border-[#002060] p-0.5"></td>
               <td className="border-r border-[#002060] p-0.5"></td>
               <td className="border-r border-[#002060] p-0.5"></td>

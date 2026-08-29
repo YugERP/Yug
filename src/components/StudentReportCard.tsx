@@ -4,11 +4,13 @@ import { type Student, type ExamMark, type ExamType } from '../types';
 import { Card, Button, Label } from './UI';
 import { Printer, Upload, RefreshCw, Award, BookOpen, CheckCircle, AlertCircle, FileText, X, Download, BarChart2, Eye } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { isSameGrade, isSameSubject, isValidPhotoUrl, isPracticalSubject, isNurseryOrKg } from '../utils/gradeHelper';
+import { isSameGrade, isSameSubject, isValidPhotoUrl, isPracticalSubject, isNurseryOrKg, getDefaultSubjectsForGrade } from '../utils/gradeHelper';
 import { type SubjectRowData } from './reportCard/types';
 import { ReportCardStyles } from './reportCard/ReportCardStyles';
 import { ClassicPortraitTemplate } from './reportCard/ClassicPortraitTemplate';
+import { PaperPortraitTemplate } from './reportCard/PaperPortraitTemplate';
 import { LandscapeProTemplate } from './reportCard/LandscapeProTemplate';
+import { PaperLandscapeTemplate } from './reportCard/PaperLandscapeTemplate';
 import { NurseryKgPortraitTemplate } from './reportCard/NurseryKgPortraitTemplate';
 import { NurseryKgLandscapeTemplate } from './reportCard/NurseryKgLandscapeTemplate';
 
@@ -26,10 +28,10 @@ export function StudentReportCard({ student, onClose, allowEditPhoto = true }: S
   const [activeViewTab, setActiveViewTab] = useState<'transcript' | 'analytics'>('transcript');
   const [photoUploading, setPhotoUploading] = useState(false);
   const defaultTpl = student.reportCardTemplate || (isNurseryOrKg(student.grade) ? 'nursery_kg' : 'classic_portrait');
-  const [selectedTemplate, setSelectedTemplate] = useState<'classic_portrait' | 'landscape_new' | 'nursery_kg' | 'nursery_kg_landscape'>(defaultTpl);
+  const [selectedTemplate, setSelectedTemplate] = useState<'classic_portrait' | 'paper_i_ii_portrait' | 'landscape_new' | 'paper_i_ii_landscape' | 'nursery_kg' | 'nursery_kg_landscape'>(defaultTpl);
   const [photoLoadError, setPhotoLoadError] = useState(false);
 
-  const isLandscape = selectedTemplate === 'landscape_new' || selectedTemplate === 'nursery_kg_landscape';
+  const isLandscape = selectedTemplate === 'landscape_new' || selectedTemplate === 'paper_i_ii_landscape' || selectedTemplate === 'nursery_kg_landscape';
   const activePhoto = isValidPhotoUrl(student.photoUrl) ? student.photoUrl : (isValidPhotoUrl(student.docStudentPhoto) ? student.docStudentPhoto : null);
 
   // School details
@@ -51,11 +53,8 @@ export function StudentReportCard({ student, onClose, allowEditPhoto = true }: S
   const sessionToUse = student.academicSession || activeAcademicSession;
   const studentMarks = marks.filter(m => m.studentId === student.id);
   
-  // Available subjects
-  const defaultSubjects = [
-    'Hindi', 'English', 'Mathematics', 'Science', 'Social Science', 
-    'Drawing', 'G.K Moral', 'Reasoning', 'P.T.', 'Sanskrit', 'Computer Science'
-  ];
+  // Available subjects based on student grade
+  const defaultSubjects = getDefaultSubjectsForGrade(student.grade);
   
   const studentSubjects = student.subjects && student.subjects.length > 0 
     ? student.subjects 
@@ -107,53 +106,93 @@ export function StudentReportCard({ student, onClose, allowEditPhoto = true }: S
 
     const hyTest = studentMarks.find(m => isSameSubject(m.subject, subject) && m.examType === 'Half-Yearly Test');
     const hyExam = studentMarks.find(m => isSameSubject(m.subject, subject) && m.examType === 'Half-Yearly Exam');
-    const hyPrac = studentMarks.find(m => isSameSubject(m.subject, subject) && m.examType === 'Half-Yearly Practical');
+    const hyPrac = studentMarks.find(m => isSameSubject(m.subject, subject) && (m.examType === 'Half-Yearly Practical' || m.examType === 'Practical Exam'));
+    const hyOral = studentMarks.find(m => isSameSubject(m.subject, subject) && (m.examType === 'Half-Yearly Oral' || m.examType === 'Oral Exam'));
 
     const yTest = studentMarks.find(m => isSameSubject(m.subject, subject) && m.examType === 'Yearly Test');
     const yExam = studentMarks.find(m => isSameSubject(m.subject, subject) && m.examType === 'Yearly Exam');
-    const yPrac = studentMarks.find(m => isSameSubject(m.subject, subject) && m.examType === 'Yearly Practical');
+    const yPrac = studentMarks.find(m => isSameSubject(m.subject, subject) && (m.examType === 'Yearly Practical' || m.examType === 'Practical Exam'));
+    const yOral = studentMarks.find(m => isSameSubject(m.subject, subject) && (m.examType === 'Yearly Oral' || m.examType === 'Oral Exam'));
 
-    const hasHy = !!(hyTest || hyExam || hyPrac);
-    const hasY = !!(yTest || yExam || yPrac);
-    const hasAny = hasHy || hasY;
+    // Oral values
+    const hyOralVal = (hyExam && (hyExam as any).oralMarks !== undefined)
+      ? (hyExam as any).oralMarks
+      : (hyOral ? hyOral.marksObtained : 0);
+    const hyOralMax = (hyExam && (hyExam as any).oralMaxMarks !== undefined && (hyExam as any).oralMaxMarks > 0)
+      ? (hyExam as any).oralMaxMarks
+      : (hyOral ? hyOral.maxMarks : 0);
+    const hyOralExists = (hyExam && (hyExam as any).oralMarks !== undefined) || !!hyOral || hyOralVal > 0;
+    const hasHyOral = hyOralExists || hyOralMax > 0;
 
-    // Half-yearly values
-    const hyTestVal = hyTest ? hyTest.marksObtained : 0;
-    const hyTestMax = hyTest ? hyTest.maxMarks : 10;
+    const yOralVal = (yExam && (yExam as any).oralMarks !== undefined)
+      ? (yExam as any).oralMarks
+      : (yOral ? yOral.marksObtained : 0);
+    const yOralMax = (yExam && (yExam as any).oralMaxMarks !== undefined && (yExam as any).oralMaxMarks > 0)
+      ? (yExam as any).oralMaxMarks
+      : (yOral ? yOral.maxMarks : 0);
+    const yOralExists = (yExam && (yExam as any).oralMarks !== undefined) || !!yOral || yOralVal > 0;
+    const hasYOral = yOralExists || yOralMax > 0;
 
-    const isHyPractical = isSubjectPractical || (hyExam && hyExam.practicalMaxMarks && hyExam.practicalMaxMarks > 0) || !!hyPrac;
-    const hyExamVal = hyExam ? hyExam.marksObtained : 0;
-    const defaultHyTheoryMax = isHyPractical ? 60 : 90;
-    const hyExamMax = hyExam ? (hyExam.maxMarks ?? defaultHyTheoryMax) : defaultHyTheoryMax;
+    // Practical values
+    const hyPracVal = (hyExam && hyExam.practicalMarks !== undefined)
+      ? hyExam.practicalMarks
+      : ((hyExam && (hyExam as any).practicalMarksObtained !== undefined)
+          ? (hyExam as any).practicalMarksObtained
+          : (hyPrac ? hyPrac.marksObtained : 0));
 
-    const hyPracVal = hyExam && hyExam.practicalMarksObtained !== undefined 
-      ? hyExam.practicalMarksObtained 
-      : (hyPrac ? hyPrac.marksObtained : 0);
-    const hyPracMax = hyExam && hyExam.practicalMaxMarks !== undefined 
-      ? hyExam.practicalMaxMarks 
+    const isHyPractical = isSubjectPractical || (hyExam && ((hyExam.practicalMaxMarks && hyExam.practicalMaxMarks > 0) || hyExam.practicalMarks !== undefined || (hyExam as any).practicalMarksObtained !== undefined)) || !!hyPrac;
+
+    const hyPracMax = (hyExam && hyExam.practicalMaxMarks !== undefined && hyExam.practicalMaxMarks > 0)
+      ? hyExam.practicalMaxMarks
       : (hyPrac ? hyPrac.maxMarks : (isHyPractical ? 30 : 0));
 
-    const hyMax = hyTestMax + hyExamMax + (isHyPractical ? hyPracMax : 0);
-    const hyObt = hyTestVal + hyExamVal + (isHyPractical ? hyPracVal : 0);
+    const hasHyPracData = (hyExam && (hyExam.practicalMarks !== undefined || (hyExam as any).practicalMarksObtained !== undefined)) || !!hyPrac || (isHyPractical && hyPracVal > 0);
+    const hasHyPrac = isHyPractical && (hasHyPracData || hyPracMax > 0);
+
+    // Written / Theory & Test
+    const hyTestVal = hyTest ? hyTest.marksObtained : 0;
+    const hyTestMax = hyTest ? hyTest.maxMarks : 10;
+    const hyExamVal = hyExam ? hyExam.marksObtained : 0;
+    let defaultHyTheoryMax = isHyPractical ? (hyPracMax === 30 ? 60 : Math.max(0, 100 - hyTestMax - hyPracMax - (hasHyOral ? hyOralMax : 0))) : (hasHyOral ? Math.max(0, 90 - hyOralMax) : 90);
+    let hyExamMax = hyExam ? (hyExam.maxMarks ?? defaultHyTheoryMax) : defaultHyTheoryMax;
+    if ((isHyPractical || hasHyOral) && (hyPracMax > 0 || hyOralMax > 0) && hyExamMax + (isHyPractical ? hyPracMax : 0) + (hasHyOral ? hyOralMax : 0) + hyTestMax > 100 && hyExamMax >= 70) {
+      hyExamMax = Math.max(0, 100 - hyTestMax - (isHyPractical ? hyPracMax : 0) - (hasHyOral ? hyOralMax : 0));
+    }
+
+    const hasHy = !!(hyTest || hyExam || hyPrac || hyOral || (hyExam && ((hyExam as any).oralMarks !== undefined || hyExam.practicalMarks !== undefined)));
+    const hyMax = hyTestMax + hyExamMax + (hasHyOral ? hyOralMax : 0) + (isHyPractical ? hyPracMax : 0);
+    const hyObt = (hyTest ? hyTestVal : 0) + (hyExam ? hyExamVal : 0) + (hasHyOral ? hyOralVal : 0) + (isHyPractical ? hyPracVal : 0);
 
     // Yearly values
-    const yTestVal = yTest ? yTest.marksObtained : 0;
-    const yTestMax = yTest ? yTest.maxMarks : 10;
+    const yPracVal = (yExam && yExam.practicalMarks !== undefined)
+      ? yExam.practicalMarks
+      : ((yExam && (yExam as any).practicalMarksObtained !== undefined)
+          ? (yExam as any).practicalMarksObtained
+          : (yPrac ? yPrac.marksObtained : 0));
 
-    const isYPractical = isSubjectPractical || (yExam && yExam.practicalMaxMarks && yExam.practicalMaxMarks > 0) || !!yPrac;
-    const yExamVal = yExam ? yExam.marksObtained : 0;
-    const defaultYTheoryMax = isYPractical ? 60 : 90;
-    const yExamMax = yExam ? (yExam.maxMarks ?? defaultYTheoryMax) : defaultYTheoryMax;
+    const isYPractical = isSubjectPractical || (yExam && ((yExam.practicalMaxMarks && yExam.practicalMaxMarks > 0) || yExam.practicalMarks !== undefined || (yExam as any).practicalMarksObtained !== undefined)) || !!yPrac;
 
-    const yPracVal = yExam && yExam.practicalMarksObtained !== undefined 
-      ? yExam.practicalMarksObtained 
-      : (yPrac ? yPrac.marksObtained : 0);
-    const yPracMax = yExam && yExam.practicalMaxMarks !== undefined 
-      ? yExam.practicalMaxMarks 
+    const yPracMax = (yExam && yExam.practicalMaxMarks !== undefined && yExam.practicalMaxMarks > 0)
+      ? yExam.practicalMaxMarks
       : (yPrac ? yPrac.maxMarks : (isYPractical ? 30 : 0));
 
-    const yMax = yTestMax + yExamMax + (isYPractical ? yPracMax : 0);
-    const yObt = yTestVal + yExamVal + (isYPractical ? yPracVal : 0);
+    const hasYPracData = (yExam && (yExam.practicalMarks !== undefined || (yExam as any).practicalMarksObtained !== undefined)) || !!yPrac || (isYPractical && yPracVal > 0);
+    const hasYPrac = isYPractical && (hasYPracData || yPracMax > 0);
+
+    const yTestVal = yTest ? yTest.marksObtained : 0;
+    const yTestMax = yTest ? yTest.maxMarks : 10;
+    const yExamVal = yExam ? yExam.marksObtained : 0;
+    let defaultYTheoryMax = isYPractical ? (yPracMax === 30 ? 60 : Math.max(0, 100 - yTestMax - yPracMax - (hasYOral ? yOralMax : 0))) : (hasYOral ? Math.max(0, 90 - yOralMax) : 90);
+    let yExamMax = yExam ? (yExam.maxMarks ?? defaultYTheoryMax) : defaultYTheoryMax;
+    if ((isYPractical || hasYOral) && (yPracMax > 0 || yOralMax > 0) && yExamMax + (isYPractical ? yPracMax : 0) + (hasYOral ? yOralMax : 0) + yTestMax > 100 && yExamMax >= 70) {
+      yExamMax = Math.max(0, 100 - yTestMax - (isYPractical ? yPracMax : 0) - (hasYOral ? yOralMax : 0));
+    }
+
+    const hasY = !!(yTest || yExam || yPrac || yOral || (yExam && ((yExam as any).oralMarks !== undefined || yExam.practicalMarks !== undefined)));
+    const yMax = yTestMax + yExamMax + (hasYOral ? yOralMax : 0) + (isYPractical ? yPracMax : 0);
+    const yObt = (yTest ? yTestVal : 0) + (yExam ? yExamVal : 0) + (hasYOral ? yOralVal : 0) + (isYPractical ? yPracVal : 0);
+
+    const hasAny = hasHy || hasY;
 
     // Final total
     const finalMax = (hasHy ? hyMax : 0) + (hasY ? yMax : 0);
@@ -181,12 +220,6 @@ export function StudentReportCard({ student, onClose, allowEditPhoto = true }: S
       totalFinalObt += finalObt;
     }
 
-    const hasHyPracData = (hyExam && hyExam.practicalMarksObtained !== undefined) || !!hyPrac;
-    const hasYPracData = (yExam && yExam.practicalMarksObtained !== undefined) || !!yPrac;
-
-    const hasHyPrac = isHyPractical && (hasHyPracData || (hasHy && hyPracMax > 0));
-    const hasYPrac = isYPractical && (hasYPracData || (hasY && yPracMax > 0));
-
     return {
       subject,
       isGradingOnly,
@@ -194,21 +227,27 @@ export function StudentReportCard({ student, onClose, allowEditPhoto = true }: S
       hasHy,
       hasY,
       hasAny,
+      hasHyOral,
       hasHyPrac,
+      hasYOral,
       hasYPrac,
       hyTestVal,
       hyExamVal,
+      hyOralVal,
       hyPracVal,
       hyTestMax,
       hyExamMax,
+      hyOralMax,
       hyPracMax,
       hyMax,
       hyObt,
       yTestVal,
       yExamVal,
+      yOralVal,
       yPracVal,
       yTestMax,
       yExamMax,
+      yOralMax,
       yPracMax,
       yMax,
       yObt,
@@ -217,9 +256,11 @@ export function StudentReportCard({ student, onClose, allowEditPhoto = true }: S
       grade,
       hyTestExists: !!hyTest,
       hyExamExists: !!hyExam,
+      hyOralExists,
       hyPracExists: hasHyPracData,
       yTestExists: !!yTest,
       yExamExists: !!yExam,
+      yOralExists,
       yPracExists: hasYPracData,
     };
   });
@@ -387,8 +428,10 @@ export function StudentReportCard({ student, onClose, allowEditPhoto = true }: S
                 }}
                 className="text-xs border-slate-200 rounded px-2.5 py-1.5 bg-white border font-bold text-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer"
               >
-                <option value="classic_portrait">Classic (Portrait)</option>
-                <option value="landscape_new">Landscape Pro (New)</option>
+                <option value="classic_portrait">Classic Portrait (Writ / Prac)</option>
+                <option value="landscape_new">Landscape Pro (Writ / Prac)</option>
+                <option value="paper_i_ii_portrait">Paper I &amp; II (Portrait)</option>
+                <option value="paper_i_ii_landscape">Paper I &amp; II (Landscape A4)</option>
                 <option value="nursery_kg">Nursery / KG (Portrait)</option>
                 <option value="nursery_kg_landscape">Nursery / KG (Landscape A4)</option>
               </select>
@@ -501,8 +544,16 @@ export function StudentReportCard({ student, onClose, allowEditPhoto = true }: S
               <ClassicPortraitTemplate {...commonProps} />
             )}
 
+            {selectedTemplate === 'paper_i_ii_portrait' && (
+              <PaperPortraitTemplate {...commonProps} />
+            )}
+
             {selectedTemplate === 'landscape_new' && (
               <LandscapeProTemplate {...commonProps} />
+            )}
+
+            {selectedTemplate === 'paper_i_ii_landscape' && (
+              <PaperLandscapeTemplate {...commonProps} />
             )}
 
             {selectedTemplate === 'nursery_kg' && (

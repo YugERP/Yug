@@ -217,6 +217,9 @@ interface StoreContextType extends StoreState {
   addHomework: (hw: Omit<Homework, 'id' | 'date'>) => void;
   addMark: (mark: Omit<ExamMark, 'id' | 'date'>) => void;
   importMarks: (marks: Omit<ExamMark, 'id' | 'date' | 'schoolId'>[]) => void;
+  deleteMark: (id: string) => Promise<void>;
+  deleteSubjectMarks: (studentIds: string[], subject: string, examType?: string) => Promise<void>;
+  deleteStudentAllMarks: (studentId: string) => Promise<void>;
   addFeePayment: (studentId: string, amount: number, month: string, remarks: string) => FeeRecord;
   importFeeRecords: (records: FeeRecord[]) => void;
   deleteFeePayment: (id: string) => void;
@@ -878,6 +881,51 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const deleteMark = async (id: string) => {
+    try {
+      setMarks(prev => prev.filter(m => m.id !== id));
+      await deleteDoc(doc(db, 'marks', id));
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `marks/${id}`);
+    }
+  };
+
+  const deleteSubjectMarks = async (studentIds: string[], subject: string, examType?: string) => {
+    try {
+      const studentIdSet = new Set(studentIds);
+      const toDelete = marks.filter(m => 
+        studentIdSet.has(m.studentId) && 
+        isSameSubject(m.subject, subject) && 
+        (!examType || m.examType === examType)
+      );
+
+      if (toDelete.length === 0) return;
+
+      const deleteIds = new Set(toDelete.map(m => m.id));
+      setMarks(prev => prev.filter(m => !deleteIds.has(m.id)));
+
+      const deletePromises = toDelete.map(m => deleteDoc(doc(db, 'marks', m.id)));
+      await Promise.all(deletePromises);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, 'marks subject batch');
+    }
+  };
+
+  const deleteStudentAllMarks = async (studentId: string) => {
+    try {
+      const toDelete = marks.filter(m => m.studentId === studentId);
+      if (toDelete.length === 0) return;
+
+      const deleteIds = new Set(toDelete.map(m => m.id));
+      setMarks(prev => prev.filter(m => !deleteIds.has(m.id)));
+
+      const deletePromises = toDelete.map(m => deleteDoc(doc(db, 'marks', m.id)));
+      await Promise.all(deletePromises);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `marks/student/${studentId}`);
+    }
+  };
+
   const addFeePayment = (studentId: string, amount: number, month: string, remarks: string, receiptNo?: string) => {
     const school = schools.find(s => s.id === effectiveSchoolId);
     
@@ -1219,7 +1267,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       issues: filteredIssues, attendances, notificationLogs, currentUser, classFees: currentClassFees, activeAcademicSession, academicSessions, allowedSessions,
       sessionRequests, attendanceRequests, parentAccounts: filteredParentAccounts,
       login, logout, setActiveAcademicSession, addAcademicSession, editAcademicSession, deleteAcademicSession, setAllowedSessions, addSchool, updateSchool, updateSchoolFeatures, deleteSchool, addStudent, importStudents, deleteStudent, restoreStudent, hardDeleteStudent, deleteAllStudentsInSchool, updateStudent, addTeacher, 
-      deleteTeacher, addClerk, deleteClerk, addParentAccount, updateParentAccount, deleteParentAccount, addHomework, addMark, importMarks, addFeePayment, importFeeRecords, deleteFeePayment, 
+      deleteTeacher, addClerk, deleteClerk, addParentAccount, updateParentAccount, deleteParentAccount, addHomework, addMark, importMarks, deleteMark, deleteSubjectMarks, deleteStudentAllMarks, addFeePayment, importFeeRecords, deleteFeePayment, 
       addIssue, resolveIssue, setClassFee, setClassFeesBatch, getStudentBalance, saveAttendance, addNotificationLog,
       requestSessionApproval, approveSessionRequest, deleteSessionRequest,
       submitAttendanceRequest, approveAttendanceRequest, rejectAttendanceRequest
