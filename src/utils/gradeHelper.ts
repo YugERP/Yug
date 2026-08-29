@@ -90,6 +90,15 @@ export function normalizeGrade(gradeStr?: string | null): string {
 }
 
 /**
+ * Checks if a class is Pre-Primary / Kindergarten (Nursery, L.K.G, U.K.G, Playgroup, etc.)
+ */
+export function isPrePrimaryGrade(gradeStr?: string | null): boolean {
+  if (!gradeStr) return false;
+  const norm = normalizeGrade(gradeStr);
+  return norm === 'Nursery' || norm === 'L.K.G' || norm === 'U.K.G' || norm.toLowerCase().includes('nurs') || norm.toLowerCase().includes('lkg') || norm.toLowerCase().includes('ukg') || norm.toLowerCase().includes('play');
+}
+
+/**
  * Checks if two grade strings represent the same class
  */
 export function isSameGrade(g1?: string | null, g2?: string | null): boolean {
@@ -216,6 +225,16 @@ export function isPracticalSubject(subjectName?: string | null): boolean {
     sub.includes('geography') ||
     sub.includes('music')
   );
+}
+
+/**
+ * Checks if a subject has practical considering the student's grade/class.
+ * Pre-primary (Nursery, LKG, UKG) NEVER has practical exams.
+ */
+export function isPracticalSubjectForGrade(subjectName?: string | null, gradeStr?: string | null): boolean {
+  if (!subjectName) return false;
+  if (isPrePrimaryGrade(gradeStr)) return false;
+  return isPracticalSubject(subjectName);
 }
 
 /**

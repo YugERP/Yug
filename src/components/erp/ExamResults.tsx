@@ -7,23 +7,70 @@ import {
   Layers, Users, User, ChevronLeft, ChevronRight, Sliders, Grid, BookOpen,
   ArrowRight, RefreshCw, Check, FlaskConical, Trash2, Eye, EyeOff,
   History, RotateCcw, AlertTriangle, Filter, HardDrive, Bookmark, CheckCircle2,
-  FileText
+  FileText, SlidersHorizontal, AlertCircle, ArrowUpDown, X, Clock, ArrowDownUp
 } from 'lucide-react';
 import { 
   normalizeGrade, isSameGrade, getDefaultSubjectsForGrade, ALL_STANDARD_CLASSES, 
-  isSameSubject, normalizeSubject, isPracticalSubject, getDefaultPracticalMaxMarks 
+  isSameSubject, normalizeSubject, isPracticalSubject, getDefaultPracticalMaxMarks,
+  isPrePrimaryGrade, isPracticalSubjectForGrade
 } from '../../utils/gradeHelper';
 
-type EntryMode = 'single-subject' | 'student-mixed' | 'class-matrix' | 'attendance';
-export type MatrixPattern = 'written-oral' | 'paper-i-ii' | 'written-prac' | 'written-only' | 'all-composite';
+type EntryMode = 'single-subject' | 'student-mixed' | 'class-matrix' | 'subject-annual-ledger' | 'pre-primary-junior' | 'attendance';
+export type MatrixPattern = 
+  | 'test-paper-i-ii' 
+  | 'paper-i-ii' 
+  | 'test-written-oral' 
+  | 'written-oral' 
+  | 'test-written-prac' 
+  | 'written-prac' 
+  | 'written-only' 
+  | 'all-composite';
+
+export type StudentSortOption = 
+  | 'roll-asc'        // 🔢 रोल नंबर 1 -> अंतिम (Roll No 1 to N)
+  | 'roll-desc'       // 🔢 रोल नंबर उल्टा N -> 1 (Roll No Desc)
+  | 'name-asc'        // 🔤 नाम वर्णमाला A -> Z (अ से ज्ञ)
+  | 'name-desc'       // 🔤 नाम उल्टा Z -> A
+  | 'father-asc'      // 👨‍👦 पिता का नाम A -> Z
+  | 'sr-asc'          // 📜 स्कॉलर / SR No
+  | 'gender-boys'     // 👦 छात्र पहले (Boys First)
+  | 'gender-girls';   // 👧 छात्राएं पहले (Girls First)
+
+export type StudentMarksFilter = 'all' | 'pending' | 'completed';
+export type StudentGenderFilter = 'all' | 'Male' | 'Female';
+export type StudentSectionFilter = 'all' | string;
 
 export interface MatrixCellData {
-  obt: number;
-  max: number;
+  testObt?: number;
+  testMax?: number;
+  obt: number; // Paper I / Written marks obtained
+  max: number; // Paper I / Written max marks
+  paper2Obt?: number; // Paper II marks obtained
+  paper2Max?: number; // Paper II max marks
   oralObt?: number;
   oralMax?: number;
   pracObt?: number;
   pracMax?: number;
+}
+
+export interface SubjectAnnualRowMarks {
+  hyTestObt: number;
+  hyTestMax: number;
+  hyWrittenObt: number;
+  hyWrittenMax: number;
+  hyOralObt: number;
+  hyOralMax: number;
+  hyPracObt: number;
+  hyPracMax: number;
+
+  yTestObt: number;
+  yTestMax: number;
+  yWrittenObt: number;
+  yWrittenMax: number;
+  yOralObt: number;
+  yOralMax: number;
+  yPracObt: number;
+  yPracMax: number;
 }
 
 const PRESET_MAX_MARKS = [10, 20, 25, 30, 50, 60, 70, 80, 90, 100];
@@ -35,6 +82,12 @@ export function ExamResults() {
   const [selectedClass, setSelectedClass] = useState('Class 9');
   const [examType, setExamType] = useState<ExamType>('Half-Yearly Test');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Universal Student Sorting & Filtering Controls (Applies to all modes)
+  const [sortBy, setSortBy] = useState<StudentSortOption>('roll-asc');
+  const [marksFilter, setMarksFilter] = useState<StudentMarksFilter>('all');
+  const [genderFilter, setGenderFilter] = useState<StudentGenderFilter>('all');
+  const [sectionFilter, setSectionFilter] = useState<StudentSectionFilter>('all');
 
   // Bulk max marks tool state for Single Subject mode
   const [bulkMaxMarksInput, setBulkMaxMarksInput] = useState<number>(10);
@@ -53,17 +106,6 @@ export function ExamResults() {
         return (a.name || '').localeCompare(b.name || '');
       });
   }, [students, selectedClass]);
-
-  const filteredStudents = React.useMemo(() => {
-    const q = searchQuery.toLowerCase().trim();
-    if (!q) return classStudents;
-    return classStudents.filter(s => 
-      (s.name || '').toLowerCase().includes(q) ||
-      (s.rollNo && String(s.rollNo).includes(q)) ||
-      (s.srNo && s.srNo.toLowerCase().includes(q)) ||
-      (s.admissionNo && s.admissionNo.toLowerCase().includes(q))
-    );
-  }, [classStudents, searchQuery]);
 
   // Dynamically compile subjects based on class standards and student enrollment choices
   const subjects = React.useMemo(() => {
@@ -88,10 +130,12 @@ export function ExamResults() {
   // MODE 3: CLASS MASTER GRID & MULTI-COMPONENT MATRIX STATE
   // -------------------------------------------------------------
   const [matrixMarks, setMatrixMarks] = useState<Record<string, MatrixCellData>>({});
-  const [matrixPattern, setMatrixPattern] = useState<MatrixPattern>('written-oral');
+  const [matrixPattern, setMatrixPattern] = useState<MatrixPattern>('test-paper-i-ii');
   const [matrixSubjectFilter, setMatrixSubjectFilter] = useState<string>('ALL');
   const [hideCompletedSubjects, setHideCompletedSubjects] = useState<boolean>(false);
-  const [bulkMatrixWrittenMax, setBulkMatrixWrittenMax] = useState<number>(80);
+  const [bulkMatrixTestMax, setBulkMatrixTestMax] = useState<number>(10);
+  const [bulkMatrixWrittenMax, setBulkMatrixWrittenMax] = useState<number>(35);
+  const [bulkMatrixPaper2Max, setBulkMatrixPaper2Max] = useState<number>(35);
   const [bulkMatrixOralPracMax, setBulkMatrixOralPracMax] = useState<number>(20);
   const [isMatrixSaved, setIsMatrixSaved] = useState(false);
   const [isMatrixSaving, setIsMatrixSaving] = useState(false);
@@ -108,7 +152,9 @@ export function ExamResults() {
       classStudents.forEach(st => {
         const cell = matrixMarks[`${st.id}:::${sub}`];
         if (cell && (
+          (cell.testObt !== undefined && cell.testObt > 0) ||
           (cell.obt !== undefined && cell.obt > 0) || 
+          (cell.paper2Obt !== undefined && cell.paper2Obt > 0) ||
           (cell.oralObt !== undefined && cell.oralObt > 0) || 
           (cell.pracObt !== undefined && cell.pracObt > 0)
         )) {
@@ -150,10 +196,11 @@ export function ExamResults() {
     }
   }, [subjects, subject]);
 
-  // Check if current subject or exam has practical component
-  const isSubjectPractical = isPracticalSubject(subject);
-  const isExamTypePracticalOnly = examType === 'Half-Yearly Practical' || examType === 'Yearly Practical' || examType === 'Practical Exam';
-  const isPracticalActive = isExamTypePracticalOnly || isSubjectPractical || forceShowPractical;
+  // Check if current class, subject or exam has practical component
+  const isPrePrimary = isPrePrimaryGrade(selectedClass);
+  const isSubjectPractical = !isPrePrimary && isPracticalSubjectForGrade(subject, selectedClass);
+  const isExamTypePracticalOnly = !isPrePrimary && (examType === 'Half-Yearly Practical' || examType === 'Yearly Practical' || examType === 'Practical Exam');
+  const isPracticalActive = !isPrePrimary && (isExamTypePracticalOnly || isSubjectPractical || forceShowPractical);
 
   // Set smart default for bulkMaxMarksInput when examType or subject changes
   useEffect(() => {
@@ -166,9 +213,9 @@ export function ExamResults() {
       setBulkMaxMarksInput(60);
       setBulkPracticalMaxMarksInput(30);
     } else {
-      setBulkMaxMarksInput(90);
+      setBulkMaxMarksInput(isPrePrimary ? 70 : 90);
     }
-  }, [examType, subject, isSubjectPractical, isExamTypePracticalOnly]);
+  }, [examType, subject, isSubjectPractical, isExamTypePracticalOnly, isPrePrimary]);
 
   // -------------------------------------------------------------
   // MODE 1: SINGLE SUBJECT LOCAL STATE
@@ -258,25 +305,71 @@ export function ExamResults() {
   useEffect(() => {
     const map: Record<string, MatrixCellData> = {};
     const isTest = examType === 'Half-Yearly Test' || examType === 'Yearly Test';
+    const isHalfYearly = examType === 'Half-Yearly Exam';
+    const isYearly = examType === 'Yearly Exam';
+
+    const testEt: ExamType | null = isHalfYearly ? 'Half-Yearly Test' 
+      : isYearly ? 'Yearly Test' 
+      : isTest ? examType : null;
+
+    const pracEt: ExamType | null = isHalfYearly ? 'Half-Yearly Practical' 
+      : isYearly ? 'Yearly Practical' 
+      : null;
+
+    const oralEt: ExamType | null = isHalfYearly ? 'Half-Yearly Oral' 
+      : isYearly ? 'Yearly Oral' 
+      : null;
 
     classStudents.forEach(st => {
       subjects.forEach(sub => {
         const found = marks.find(m => m.studentId === st.id && m.examType === examType && isSameSubject(m.subject, sub));
-        const pracEt: ExamType | null = examType === 'Half-Yearly Exam' ? 'Half-Yearly Practical' : examType === 'Yearly Exam' ? 'Yearly Practical' : null;
+        const foundTest = testEt ? marks.find(m => m.studentId === st.id && m.examType === testEt && isSameSubject(m.subject, sub)) : null;
         const foundPrac = pracEt ? marks.find(m => m.studentId === st.id && m.examType === pracEt && isSameSubject(m.subject, sub)) : null;
+        const foundOral = oralEt ? marks.find(m => m.studentId === st.id && m.examType === oralEt && isSameSubject(m.subject, sub)) : null;
 
         const subHasPrac = isPracticalSubject(sub);
-        const defaultWrittenMax = isTest ? 10 : isExamTypePracticalOnly ? 30 : subHasPrac ? 60 : 80;
+        const defaultTestMax = 10;
+        const defaultPaper1Max = isTest ? 10 : isExamTypePracticalOnly ? 30 : subHasPrac ? 60 : 35;
+        const defaultPaper2Max = isTest ? 0 : 35;
         const defaultOralMax = isTest ? 0 : 20;
         const defaultPracMax = subHasPrac ? 30 : 0;
 
+        const testObt = foundTest ? foundTest.marksObtained : 0;
+        const testMax = foundTest ? foundTest.maxMarks : defaultTestMax;
+
+        const obt = found ? found.marksObtained : 0;
+        const max = found ? found.maxMarks : defaultPaper1Max;
+
+        // Paper II is stored in practicalMarks or foundPrac or oralMarks
+        const p2Obt = (found?.practicalMarks !== undefined && found.practicalMarks > 0)
+          ? found.practicalMarks
+          : ((found?.oralMarks !== undefined && found.oralMarks > 0 && matrixPattern === 'paper-i-ii')
+              ? found.oralMarks
+              : (foundPrac ? foundPrac.marksObtained : 0));
+
+        const p2Max = (found?.practicalMaxMarks !== undefined && found.practicalMaxMarks > 0)
+          ? found.practicalMaxMarks
+          : ((found?.oralMaxMarks !== undefined && found.oralMaxMarks > 0 && matrixPattern === 'paper-i-ii')
+              ? found.oralMaxMarks
+              : (foundPrac ? foundPrac.maxMarks : defaultPaper2Max));
+
+        const oralObt = found?.oralMarks !== undefined ? found.oralMarks : (foundOral ? foundOral.marksObtained : 0);
+        const oralMax = found?.oralMaxMarks !== undefined ? found.oralMaxMarks : (foundOral ? foundOral.maxMarks : defaultOralMax);
+
+        const pracObt = found?.practicalMarks !== undefined ? found.practicalMarks : (foundPrac ? foundPrac.marksObtained : 0);
+        const pracMax = found?.practicalMaxMarks !== undefined ? found.practicalMaxMarks : (foundPrac ? foundPrac.maxMarks : defaultPracMax);
+
         map[`${st.id}:::${sub}`] = {
-          obt: found ? found.marksObtained : 0,
-          max: found ? found.maxMarks : defaultWrittenMax,
-          oralObt: found?.oralMarks !== undefined ? found.oralMarks : 0,
-          oralMax: found?.oralMaxMarks !== undefined ? found.oralMaxMarks : defaultOralMax,
-          pracObt: found?.practicalMarks !== undefined ? found.practicalMarks : (foundPrac ? foundPrac.marksObtained : 0),
-          pracMax: found?.practicalMaxMarks !== undefined ? found.practicalMaxMarks : (foundPrac ? foundPrac.maxMarks : defaultPracMax)
+          testObt,
+          testMax,
+          obt,
+          max,
+          paper2Obt: p2Obt,
+          paper2Max: p2Max,
+          oralObt,
+          oralMax,
+          pracObt,
+          pracMax
         };
       });
     });
@@ -294,7 +387,7 @@ export function ExamResults() {
           setDraftInfo({
             timestamp: parsed.timestamp || 'Previous Session',
             count: Object.keys(parsed.marks).length,
-            pattern: parsed.pattern || 'written-oral'
+            pattern: parsed.pattern || 'test-paper-i-ii'
           });
         } else {
           setDraftInfo(null);
@@ -336,6 +429,156 @@ export function ExamResults() {
   }, [matrixMarks, matrixPattern, selectedClass, examType, activeMode]);
 
   // -------------------------------------------------------------
+  // MODE 4: SUBJECT ANNUAL LEDGER STATE (Test + Half-Yearly + Annual for 1 Subject)
+  // -------------------------------------------------------------
+  const [subjectAnnualMarks, setSubjectAnnualMarks] = useState<Record<string, SubjectAnnualRowMarks>>({});
+  const [showAnnualTestCols, setShowAnnualTestCols] = useState<boolean>(true);
+  const [showAnnualOralCols, setShowAnnualOralCols] = useState<boolean>(true);
+  const [showAnnualPracCols, setShowAnnualPracCols] = useState<boolean>(false);
+  const [syncHyAnnualMax, setSyncHyAnnualMax] = useState<boolean>(true);
+
+  // Bulk / Preset Max Marks state for Mode 4
+  const [bulkAnnualWrittenMax, setBulkAnnualWrittenMax] = useState<number>(70);
+  const [bulkAnnualOralMax, setBulkAnnualOralMax] = useState<number>(20);
+  const [bulkAnnualPracMax, setBulkAnnualPracMax] = useState<number>(30);
+  const [bulkAnnualTestMax, setBulkAnnualTestMax] = useState<number>(10);
+
+  const [isSubjectAnnualSaved, setIsSubjectAnnualSaved] = useState<boolean>(false);
+  const [isSubjectAnnualSaving, setIsSubjectAnnualSaving] = useState<boolean>(false);
+  const [isSubjectAnnualDraftSaved, setIsSubjectAnnualDraftSaved] = useState<boolean>(false);
+  const [subjectAnnualDraftInfo, setSubjectAnnualDraftInfo] = useState<{ timestamp: string; count: number } | null>(null);
+  const [subjectAnnualAutoSaveNotice, setSubjectAnnualAutoSaveNotice] = useState<string>('');
+
+  // Subject completion stats for Mode 4
+  const subjectAnnualStats = React.useMemo(() => {
+    return subjects.map(sub => {
+      let filledStudents = 0;
+      classStudents.forEach(st => {
+        const stMarks = marks.filter(m => m.studentId === st.id && isSameSubject(m.subject, sub));
+        const hasAny = stMarks.some(m => m.marksObtained > 0 || (m.oralMarks && m.oralMarks > 0) || (m.practicalMarks && m.practicalMarks > 0));
+        if (hasAny) filledStudents++;
+      });
+      const total = classStudents.length;
+      return {
+        subject: sub,
+        filledStudents,
+        totalStudents: total,
+        isComplete: total > 0 && filledStudents >= total
+      };
+    });
+  }, [subjects, classStudents, marks]);
+
+  // Load existing database marks into Subject Annual Ledger when class or subject changes
+  useEffect(() => {
+    const map: Record<string, SubjectAnnualRowMarks> = {};
+    const isPrePrim = isPrePrimaryGrade(selectedClass);
+    const subHasPrac = !isPrePrim && isPracticalSubjectForGrade(subject, selectedClass);
+    
+    if (isPrePrim) {
+      setShowAnnualPracCols(false);
+      setShowAnnualTestCols(true);
+      setShowAnnualOralCols(true);
+      setBulkAnnualTestMax(10);
+      setBulkAnnualWrittenMax(70);
+      setBulkAnnualOralMax(20);
+      setBulkAnnualPracMax(0);
+    } else if (subHasPrac) {
+      setShowAnnualPracCols(true);
+    }
+
+    const defaultWrittenMax = isPrePrim ? 70 : (subHasPrac ? 70 : 80);
+    const defaultOralMax = 20;
+    const defaultPracMax = subHasPrac ? 30 : 0;
+    const defaultTestMax = 10;
+
+    classStudents.forEach(st => {
+      const stMarks = marks.filter(m => m.studentId === st.id && isSameSubject(m.subject, subject));
+      const hyTest = stMarks.find(m => m.examType === 'Half-Yearly Test');
+      const hyExam = stMarks.find(m => m.examType === 'Half-Yearly Exam');
+      const hyPrac = stMarks.find(m => m.examType === 'Half-Yearly Practical');
+      const yTest = stMarks.find(m => m.examType === 'Yearly Test');
+      const yExam = stMarks.find(m => m.examType === 'Yearly Exam');
+      const yPrac = stMarks.find(m => m.examType === 'Yearly Practical');
+
+      map[st.id] = {
+        hyTestObt: hyTest ? hyTest.marksObtained : 0,
+        hyTestMax: hyTest ? hyTest.maxMarks : defaultTestMax,
+        hyWrittenObt: hyExam ? hyExam.marksObtained : 0,
+        hyWrittenMax: hyExam ? hyExam.maxMarks : defaultWrittenMax,
+        hyOralObt: hyExam?.oralMarks !== undefined ? hyExam.oralMarks : 0,
+        hyOralMax: hyExam?.oralMaxMarks !== undefined ? hyExam.oralMaxMarks : defaultOralMax,
+        hyPracObt: hyExam?.practicalMarks !== undefined ? hyExam.practicalMarks : (hyPrac ? hyPrac.marksObtained : 0),
+        hyPracMax: hyExam?.practicalMaxMarks !== undefined ? hyExam.practicalMaxMarks : (hyPrac ? hyPrac.maxMarks : defaultPracMax),
+
+        yTestObt: yTest ? yTest.marksObtained : 0,
+        yTestMax: yTest ? yTest.maxMarks : defaultTestMax,
+        yWrittenObt: yExam ? yExam.marksObtained : 0,
+        yWrittenMax: yExam ? yExam.maxMarks : defaultWrittenMax,
+        yOralObt: yExam?.oralMarks !== undefined ? yExam.oralMarks : 0,
+        yOralMax: yExam?.oralMaxMarks !== undefined ? yExam.oralMaxMarks : defaultOralMax,
+        yPracObt: yExam?.practicalMarks !== undefined ? yExam.practicalMarks : (yPrac ? yPrac.marksObtained : 0),
+        yPracMax: yExam?.practicalMaxMarks !== undefined ? yExam.practicalMaxMarks : (yPrac ? yPrac.maxMarks : defaultPracMax),
+      };
+    });
+
+    setSubjectAnnualMarks(map);
+    setIsSubjectAnnualSaved(false);
+
+    // Check for offline saved draft
+    const draftKey = `edumanage_subj_annual_draft_${selectedClass}_${subject}`;
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.data && Object.keys(parsed.data).length > 0) {
+          setSubjectAnnualDraftInfo({
+            timestamp: parsed.timestamp || 'अज्ञात समय',
+            count: Object.keys(parsed.data).length
+          });
+        } else {
+          setSubjectAnnualDraftInfo(null);
+        }
+      } else {
+        setSubjectAnnualDraftInfo(null);
+      }
+    } catch (e) {
+      setSubjectAnnualDraftInfo(null);
+    }
+  }, [selectedClass, subject, classStudents, marks]);
+
+  // Debounced auto-save for Subject Annual Ledger Draft
+  useEffect(() => {
+    if (activeMode !== 'subject-annual-ledger') return;
+    if (Object.keys(subjectAnnualMarks).length === 0) return;
+
+    const hasAnyMarks = Object.values(subjectAnnualMarks).some((row: SubjectAnnualRowMarks) => 
+      row.hyTestObt > 0 || row.hyWrittenObt > 0 || row.hyOralObt > 0 || row.hyPracObt > 0 ||
+      row.yTestObt > 0 || row.yWrittenObt > 0 || row.yOralObt > 0 || row.yPracObt > 0
+    );
+    if (!hasAnyMarks) return;
+
+    const draftKey = `edumanage_subj_annual_draft_${selectedClass}_${subject}`;
+    const timer = setTimeout(() => {
+      try {
+        localStorage.setItem(draftKey, JSON.stringify({
+          timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+          class: selectedClass,
+          subject,
+          data: subjectAnnualMarks,
+          showAnnualTestCols,
+          showAnnualOralCols,
+          showAnnualPracCols
+        }));
+        setSubjectAnnualAutoSaveNotice(`Auto-saved at ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`);
+      } catch (err) {
+        console.warn('Subject annual auto-save draft failed:', err);
+      }
+    }, 1200);
+
+    return () => clearTimeout(timer);
+  }, [subjectAnnualMarks, activeMode, selectedClass, subject, showAnnualTestCols, showAnnualOralCols, showAnnualPracCols]);
+
+  // -------------------------------------------------------------
   // MODE 4: ATTENDANCE LEDGER STATE
   // -------------------------------------------------------------
   const [attendancePresentMap, setAttendancePresentMap] = useState<Record<string, number>>({});
@@ -355,6 +598,162 @@ export function ExamResults() {
     'Yearly Practical', 
     'Practical Exam'
   ];
+
+  // Dynamically extract unique sections available in selected class
+  const availableSections = React.useMemo(() => {
+    const secSet = new Set<string>();
+    classStudents.forEach(st => {
+      if (st.section && st.section.trim()) {
+        secSet.add(st.section.trim());
+      }
+    });
+    return Array.from(secSet).sort();
+  }, [classStudents]);
+
+  // Helper to determine if a student has marks entered in current context
+  const checkStudentMarksFilled = React.useCallback((studentId: string): boolean => {
+    if (activeMode === 'single-subject') {
+      const localVal = marksMap[studentId];
+      const localPrac = practicalMarksMap[studentId];
+      const dbMark = marks.find(m => m.studentId === studentId && m.examType === examType && isSameSubject(m.subject, subject));
+      const hasDb = dbMark && (dbMark.marksObtained > 0 || (dbMark.practicalMarks && dbMark.practicalMarks > 0) || (dbMark.oralMarks && dbMark.oralMarks > 0));
+      return (localVal !== undefined && localVal > 0) || (localPrac !== undefined && localPrac > 0) || !!hasDb;
+    }
+    if (activeMode === 'student-mixed') {
+      const hasDb = marks.some(m => m.studentId === studentId && (m.marksObtained > 0 || (m.oralMarks && m.oralMarks > 0) || (m.practicalMarks && m.practicalMarks > 0)));
+      if (hasDb) return true;
+      if (studentId === selectedStudentId) {
+        return Object.values(studentMixedMarks).some((val: number) => Number(val) > 0);
+      }
+      return false;
+    }
+    if (activeMode === 'class-matrix') {
+      return subjects.some(sub => {
+        const cell = matrixMarks[`${studentId}:::${sub}`];
+        if (cell && (cell.obt > 0 || (cell.oralObt && cell.oralObt > 0) || (cell.pracObt && cell.pracObt > 0))) return true;
+        const dbM = marks.find(m => m.studentId === studentId && m.examType === examType && isSameSubject(m.subject, sub));
+        return dbM && (dbM.marksObtained > 0 || (dbM.oralMarks && dbM.oralMarks > 0) || (dbM.practicalMarks && dbM.practicalMarks > 0));
+      });
+    }
+    if (activeMode === 'subject-annual-ledger' || activeMode === 'pre-primary-junior') {
+      const row = subjectAnnualMarks[studentId];
+      const hasLocal = row && (row.hyWrittenObt > 0 || row.hyOralObt > 0 || row.hyPracObt > 0 || row.hyTestObt > 0 || row.yWrittenObt > 0 || row.yOralObt > 0 || row.yPracObt > 0 || row.yTestObt > 0);
+      const dbMarks = marks.filter(m => m.studentId === studentId && isSameSubject(m.subject, subject));
+      const hasDb = dbMarks.some(m => m.marksObtained > 0 || (m.oralMarks && m.oralMarks > 0) || (m.practicalMarks && m.practicalMarks > 0));
+      return !!hasLocal || !!hasDb;
+    }
+    if (activeMode === 'attendance') {
+      const pres = attendancePresentMap[studentId];
+      return pres !== undefined && pres > 0;
+    }
+    return false;
+  }, [activeMode, marksMap, practicalMarksMap, marks, examType, subject, selectedStudentId, studentMixedMarks, subjects, matrixMarks, subjectAnnualMarks, attendancePresentMap]);
+
+  // Overall student marks progress statistics for the active class & mode
+  const studentProgressStats = React.useMemo(() => {
+    let filled = 0;
+    classStudents.forEach(st => {
+      if (checkStudentMarksFilled(st.id)) {
+        filled++;
+      }
+    });
+    return {
+      total: classStudents.length,
+      filled,
+      pending: classStudents.length - filled,
+      pct: classStudents.length > 0 ? Math.round((filled / classStudents.length) * 100) : 0
+    };
+  }, [classStudents, checkStudentMarksFilled]);
+
+  // Universal Filtered & Sorted Student List for All Modes
+  const filteredStudents = React.useMemo(() => {
+    let list = [...classStudents];
+
+    // 1. Gender Filter
+    if (genderFilter !== 'all') {
+      list = list.filter(s => s.gender === genderFilter);
+    }
+
+    // 2. Section Filter
+    if (sectionFilter !== 'all') {
+      list = list.filter(s => (s.section || '').trim().toLowerCase() === sectionFilter.trim().toLowerCase());
+    }
+
+    // 3. Marks Status Filter (Pending / Completed)
+    if (marksFilter !== 'all') {
+      list = list.filter(st => {
+        const isFilled = checkStudentMarksFilled(st.id);
+        return marksFilter === 'completed' ? isFilled : !isFilled;
+      });
+    }
+
+    // 4. Text Search Query (Name, Roll, Father Name, SR, Admission No, Mobile)
+    const q = searchQuery.toLowerCase().trim();
+    if (q) {
+      list = list.filter(s => 
+        (s.name || '').toLowerCase().includes(q) ||
+        (s.fatherName || '').toLowerCase().includes(q) ||
+        (s.rollNo && String(s.rollNo).toLowerCase().includes(q)) ||
+        (s.srNo && s.srNo.toLowerCase().includes(q)) ||
+        (s.admissionNo && s.admissionNo.toLowerCase().includes(q)) ||
+        (s.mobile && s.mobile.includes(q))
+      );
+    }
+
+    // 5. Sorting Criteria
+    list.sort((a, b) => {
+      if (sortBy === 'roll-asc') {
+        const rA = Number(a.rollNo);
+        const rB = Number(b.rollNo);
+        if (!isNaN(rA) && !isNaN(rB) && rA !== rB) return rA - rB;
+        if (!isNaN(rA) && isNaN(rB)) return -1;
+        if (isNaN(rA) && !isNaN(rB)) return 1;
+        return (a.name || '').localeCompare(b.name || '', 'hi-IN');
+      }
+      if (sortBy === 'roll-desc') {
+        const rA = Number(a.rollNo);
+        const rB = Number(b.rollNo);
+        if (!isNaN(rA) && !isNaN(rB) && rA !== rB) return rB - rA;
+        if (!isNaN(rA) && isNaN(rB)) return 1;
+        if (isNaN(rA) && !isNaN(rB)) return -1;
+        return (b.name || '').localeCompare(a.name || '', 'hi-IN');
+      }
+      if (sortBy === 'name-asc') {
+        return (a.name || '').localeCompare(b.name || '', 'hi-IN');
+      }
+      if (sortBy === 'name-desc') {
+        return (b.name || '').localeCompare(a.name || '', 'hi-IN');
+      }
+      if (sortBy === 'father-asc') {
+        return (a.fatherName || '').localeCompare(b.fatherName || '', 'hi-IN');
+      }
+      if (sortBy === 'sr-asc') {
+        const sA = Number(a.srNo || a.admissionNo);
+        const sB = Number(b.srNo || b.admissionNo);
+        if (!isNaN(sA) && !isNaN(sB) && sA !== sB) return sA - sB;
+        return (a.srNo || a.admissionNo || '').localeCompare(b.srNo || b.admissionNo || '');
+      }
+      if (sortBy === 'gender-boys') {
+        if (a.gender === 'Male' && b.gender !== 'Male') return -1;
+        if (a.gender !== 'Male' && b.gender === 'Male') return 1;
+        const rA = Number(a.rollNo);
+        const rB = Number(b.rollNo);
+        if (!isNaN(rA) && !isNaN(rB) && rA !== rB) return rA - rB;
+        return (a.name || '').localeCompare(b.name || '');
+      }
+      if (sortBy === 'gender-girls') {
+        if (a.gender === 'Female' && b.gender !== 'Female') return -1;
+        if (a.gender !== 'Female' && b.gender === 'Female') return 1;
+        const rA = Number(a.rollNo);
+        const rB = Number(b.rollNo);
+        if (!isNaN(rA) && !isNaN(rB) && rA !== rB) return rA - rB;
+        return (a.name || '').localeCompare(b.name || '');
+      }
+      return 0;
+    });
+
+    return list;
+  }, [classStudents, genderFilter, sectionFilter, marksFilter, searchQuery, sortBy, checkStudentMarksFilled]);
 
   // -------------------------------------------------------------
   // HELPERS & HANDLERS: SINGLE SUBJECT (MODE 1)
@@ -661,13 +1060,14 @@ export function ExamResults() {
   };
 
   const handleNavigateStudent = (direction: 'prev' | 'next') => {
-    const currentIndex = classStudents.findIndex(s => s.id === selectedStudentId);
+    const listToUse = filteredStudents.length > 0 ? filteredStudents : classStudents;
+    const currentIndex = listToUse.findIndex(s => s.id === selectedStudentId);
     if (currentIndex === -1) return;
 
     if (direction === 'prev' && currentIndex > 0) {
-      setSelectedStudentId(classStudents[currentIndex - 1].id);
-    } else if (direction === 'next' && currentIndex < classStudents.length - 1) {
-      setSelectedStudentId(classStudents[currentIndex + 1].id);
+      setSelectedStudentId(listToUse[currentIndex - 1].id);
+    } else if (direction === 'next' && currentIndex < listToUse.length - 1) {
+      setSelectedStudentId(listToUse[currentIndex + 1].id);
     }
   };
 
@@ -677,13 +1077,17 @@ export function ExamResults() {
   const handleMatrixChange = (
     stId: string, 
     sub: string, 
-    field: 'obt' | 'max' | 'oralObt' | 'oralMax' | 'pracObt' | 'pracMax', 
+    field: 'testObt' | 'testMax' | 'obt' | 'max' | 'paper2Obt' | 'paper2Max' | 'oralObt' | 'oralMax' | 'pracObt' | 'pracMax', 
     val: number
   ) => {
     setMatrixMarks(prev => {
       const cur = prev[`${stId}:::${sub}`] || { 
+        testObt: 0,
+        testMax: 10,
         obt: 0, 
-        max: 80, 
+        max: 35, 
+        paper2Obt: 0,
+        paper2Max: 35,
         oralObt: 0, 
         oralMax: 20, 
         pracObt: 0, 
@@ -693,7 +1097,7 @@ export function ExamResults() {
         ...prev,
         [`${stId}:::${sub}`]: {
           ...cur,
-          [field]: isNaN(val) ? 0 : val
+          [field]: isNaN(val) ? 0 : Math.max(0, val)
         }
       };
     });
@@ -701,13 +1105,15 @@ export function ExamResults() {
     setIsMatrixDraftSaved(false);
   };
 
-  // Bulk Apply Max Marks for Written / Paper 1 / Oral / Practical in 1 single click
+  // Bulk Apply Max Marks for Test / Paper 1 / Paper 2 / Oral / Practical in 1 single click
   const handleApplyMatrixBulkMaxMarks = (
-    field: 'max' | 'oralMax' | 'pracMax', 
+    field: 'testMax' | 'max' | 'paper2Max' | 'oralMax' | 'pracMax', 
     newMax: number, 
     targetSub?: string
   ) => {
+    if (field === 'testMax') setBulkMatrixTestMax(newMax);
     if (field === 'max') setBulkMatrixWrittenMax(newMax);
+    if (field === 'paper2Max') setBulkMatrixPaper2Max(newMax);
     if (field === 'oralMax' || field === 'pracMax') setBulkMatrixOralPracMax(newMax);
 
     const updated = { ...matrixMarks };
@@ -715,8 +1121,12 @@ export function ExamResults() {
       const subsToApply = targetSub && targetSub !== 'ALL' ? [targetSub] : subjects;
       subsToApply.forEach(sub => {
         const cur = updated[`${st.id}:::${sub}`] || { 
+          testObt: 0,
+          testMax: 10,
           obt: 0, 
-          max: 80, 
+          max: 35, 
+          paper2Obt: 0,
+          paper2Max: 35,
           oralObt: 0, 
           oralMax: 20, 
           pracObt: 0, 
@@ -725,6 +1135,83 @@ export function ExamResults() {
         updated[`${st.id}:::${sub}`] = {
           ...cur,
           [field]: newMax
+        };
+      });
+    });
+    setMatrixMarks(updated);
+    setIsMatrixSaved(false);
+    setIsMatrixDraftSaved(false);
+  };
+
+  // 1-Click Preset Handler for Mode 3 Matrix
+  const handleApplyMatrixPreset = (preset: 'test-paper-i-ii-80' | 'test-paper-i-ii-100' | 'paper-i-ii-100' | 'test-written-oral-100' | 'test-theory-prac-100' | 'written-oral-100') => {
+    let newPattern: MatrixPattern = 'test-paper-i-ii';
+    let tMax = 10;
+    let wMax = 35;
+    let p2Max = 35;
+    let oMax = 20;
+    let prMax = 0;
+
+    if (preset === 'test-paper-i-ii-80') {
+      newPattern = 'test-paper-i-ii';
+      tMax = 10;
+      wMax = 35;
+      p2Max = 35;
+    } else if (preset === 'test-paper-i-ii-100') {
+      newPattern = 'test-paper-i-ii';
+      tMax = 10;
+      wMax = 45;
+      p2Max = 45;
+    } else if (preset === 'paper-i-ii-100') {
+      newPattern = 'paper-i-ii';
+      tMax = 0;
+      wMax = 50;
+      p2Max = 50;
+    } else if (preset === 'test-written-oral-100') {
+      newPattern = 'test-written-oral';
+      tMax = 10;
+      wMax = 70;
+      oMax = 20;
+    } else if (preset === 'test-theory-prac-100') {
+      newPattern = 'test-written-prac';
+      tMax = 10;
+      wMax = 60;
+      prMax = 30;
+    } else if (preset === 'written-oral-100') {
+      newPattern = 'written-oral';
+      tMax = 0;
+      wMax = 80;
+      oMax = 20;
+    }
+
+    setMatrixPattern(newPattern);
+    setBulkMatrixTestMax(tMax);
+    setBulkMatrixWrittenMax(wMax);
+    setBulkMatrixPaper2Max(p2Max);
+    setBulkMatrixOralPracMax(oMax > 0 ? oMax : prMax);
+
+    const updated = { ...matrixMarks };
+    classStudents.forEach(st => {
+      subjects.forEach(sub => {
+        const cur = updated[`${st.id}:::${sub}`] || {
+          testObt: 0,
+          testMax: tMax,
+          obt: 0,
+          max: wMax,
+          paper2Obt: 0,
+          paper2Max: p2Max,
+          oralObt: 0,
+          oralMax: oMax,
+          pracObt: 0,
+          pracMax: prMax
+        };
+        updated[`${st.id}:::${sub}`] = {
+          ...cur,
+          testMax: tMax,
+          max: wMax,
+          paper2Max: p2Max,
+          oralMax: oMax,
+          pracMax: prMax
         };
       });
     });
@@ -798,7 +1285,9 @@ export function ExamResults() {
         if (cur) {
           updated[`${st.id}:::${sub}`] = {
             ...cur,
+            testObt: 0,
             obt: 0,
+            paper2Obt: 0,
             oralObt: 0,
             pracObt: 0
           };
@@ -815,15 +1304,23 @@ export function ExamResults() {
     try {
       const marksToSave: Omit<ExamMark, 'id' | 'date' | 'schoolId'>[] = [];
       const isTest = examType === 'Half-Yearly Test' || examType === 'Yearly Test';
+      const isHalfYearly = examType === 'Half-Yearly Exam';
+      const isYearly = examType === 'Yearly Exam';
 
       classStudents.forEach(st => {
         subjects.forEach(sub => {
           const cell = matrixMarks[`${st.id}:::${sub}`];
           if (cell) {
             const subHasPrac = isPracticalSubject(sub);
-            const defaultTheoryMax = isTest ? 10 : isExamTypePracticalOnly ? 30 : subHasPrac ? 60 : 80;
+            const defaultTheoryMax = isTest ? 10 : isExamTypePracticalOnly ? 30 : subHasPrac ? 60 : 35;
             const obtVal = Number(cell.obt || 0);
             const maxVal = Number(cell.max || defaultTheoryMax);
+
+            const testObt = cell.testObt !== undefined ? Number(cell.testObt) : 0;
+            const testMax = cell.testMax !== undefined ? Number(cell.testMax) : 10;
+
+            const p2Obt = cell.paper2Obt !== undefined ? Number(cell.paper2Obt) : (cell.oralObt !== undefined && cell.oralObt > 0 ? Number(cell.oralObt) : (cell.pracObt || 0));
+            const p2Max = cell.paper2Max !== undefined ? Number(cell.paper2Max) : (cell.oralMax !== undefined && cell.oralMax > 0 ? Number(cell.oralMax) : (cell.pracMax || 35));
 
             const oralObt = cell.oralObt !== undefined ? Number(cell.oralObt) : undefined;
             const oralMax = cell.oralMax !== undefined ? Number(cell.oralMax) : undefined;
@@ -831,7 +1328,34 @@ export function ExamResults() {
             const pracObt = cell.pracObt !== undefined ? Number(cell.pracObt) : undefined;
             const pracMax = cell.pracMax !== undefined ? Number(cell.pracMax) : undefined;
 
-            if (matrixPattern === 'written-oral') {
+            // 1. Save Test Mark if Test column is part of the pattern or has test marks
+            if ((isHalfYearly || isYearly) && (matrixPattern === 'test-paper-i-ii' || matrixPattern === 'test-written-oral' || matrixPattern === 'test-written-prac' || matrixPattern === 'all-composite' || testObt > 0 || (testMax > 0 && testMax !== 10))) {
+              const testExamType: ExamType = isHalfYearly ? 'Half-Yearly Test' : 'Yearly Test';
+              marksToSave.push({
+                studentId: st.id,
+                teacherId: currentUser?.id || 'admin',
+                examType: testExamType,
+                subject: normalizeSubject(sub),
+                marksObtained: testObt,
+                maxMarks: testMax
+              });
+            }
+
+            // 2. Save Main Exam Mark (Paper I, Paper II / Oral / Practical)
+            if (matrixPattern === 'test-paper-i-ii' || matrixPattern === 'paper-i-ii') {
+              marksToSave.push({
+                studentId: st.id,
+                teacherId: currentUser?.id || 'admin',
+                examType,
+                subject: normalizeSubject(sub),
+                marksObtained: obtVal, // Paper I
+                maxMarks: maxVal,
+                paper2Marks: p2Obt, // Paper II
+                paper2MaxMarks: p2Max,
+                practicalMarks: p2Obt, // Paper II (compatible)
+                practicalMaxMarks: p2Max
+              });
+            } else if (matrixPattern === 'test-written-oral' || matrixPattern === 'written-oral') {
               marksToSave.push({
                 studentId: st.id,
                 teacherId: currentUser?.id || 'admin',
@@ -842,10 +1366,7 @@ export function ExamResults() {
                 oralMarks: oralObt,
                 oralMaxMarks: oralMax
               });
-            } else if (matrixPattern === 'paper-i-ii') {
-              // Store Paper I in marksObtained, Paper II in practicalMarks/practicalMaxMarks
-              const p2Obt = oralObt !== undefined && oralObt > 0 ? oralObt : (pracObt || 0);
-              const p2Max = oralMax !== undefined && oralMax > 0 ? oralMax : (pracMax || (isTest ? 0 : 50));
+            } else if (matrixPattern === 'test-written-prac' || matrixPattern === 'written-prac') {
               marksToSave.push({
                 studentId: st.id,
                 teacherId: currentUser?.id || 'admin',
@@ -853,21 +1374,8 @@ export function ExamResults() {
                 subject: normalizeSubject(sub),
                 marksObtained: obtVal,
                 maxMarks: maxVal,
-                practicalMarks: p2Obt,
-                practicalMaxMarks: p2Max
-              });
-            } else if (matrixPattern === 'written-prac') {
-              const pObt = pracObt !== undefined && pracObt > 0 ? pracObt : (oralObt || 0);
-              const pMax = pracMax !== undefined && pracMax > 0 ? pracMax : (oralMax || (subHasPrac ? 30 : 0));
-              marksToSave.push({
-                studentId: st.id,
-                teacherId: currentUser?.id || 'admin',
-                examType,
-                subject: normalizeSubject(sub),
-                marksObtained: obtVal,
-                maxMarks: maxVal,
-                practicalMarks: pObt,
-                practicalMaxMarks: pMax
+                practicalMarks: pracObt !== undefined ? pracObt : p2Obt,
+                practicalMaxMarks: pracMax !== undefined ? pracMax : p2Max
               });
             } else if (matrixPattern === 'all-composite') {
               marksToSave.push({
@@ -877,10 +1385,12 @@ export function ExamResults() {
                 subject: normalizeSubject(sub),
                 marksObtained: obtVal,
                 maxMarks: maxVal,
+                paper2Marks: p2Obt,
+                paper2MaxMarks: p2Max,
                 oralMarks: oralObt,
                 oralMaxMarks: oralMax,
-                practicalMarks: pracObt,
-                practicalMaxMarks: pracMax
+                practicalMarks: pracObt !== undefined ? pracObt : p2Obt,
+                practicalMaxMarks: pracMax !== undefined ? pracMax : p2Max
               });
             } else {
               // written-only
@@ -915,7 +1425,335 @@ export function ExamResults() {
   };
 
   // -------------------------------------------------------------
-  // HELPERS & HANDLERS: ATTENDANCE LEDGER (MODE 4)
+  // HELPERS & HANDLERS: SUBJECT ANNUAL LEDGER (MODE 4)
+  // -------------------------------------------------------------
+  const getGradeFromPercentage = (pct: number): { label: string; bg: string; text: string } => {
+    if (pct >= 90) return { label: 'A+', bg: 'bg-emerald-100 border-emerald-300', text: 'text-emerald-800' };
+    if (pct >= 80) return { label: 'A', bg: 'bg-teal-100 border-teal-300', text: 'text-teal-800' };
+    if (pct >= 70) return { label: 'B+', bg: 'bg-blue-100 border-blue-300', text: 'text-blue-800' };
+    if (pct >= 60) return { label: 'B', bg: 'bg-cyan-100 border-cyan-300', text: 'text-cyan-800' };
+    if (pct >= 50) return { label: 'C', bg: 'bg-amber-100 border-amber-300', text: 'text-amber-800' };
+    if (pct >= 33) return { label: 'D', bg: 'bg-orange-100 border-orange-300', text: 'text-orange-800' };
+    return { label: 'E (Fail)', bg: 'bg-rose-100 border-rose-300', text: 'text-rose-800' };
+  };
+
+  const handleSubjectAnnualCellChange = (studentId: string, field: keyof SubjectAnnualRowMarks, value: number) => {
+    const safeVal = isNaN(value) ? 0 : Math.max(0, value);
+    setSubjectAnnualMarks(prev => {
+      const current = prev[studentId] || {
+        hyTestObt: 0, hyTestMax: 10,
+        hyWrittenObt: 0, hyWrittenMax: 70,
+        hyOralObt: 0, hyOralMax: 20,
+        hyPracObt: 0, hyPracMax: 0,
+        yTestObt: 0, yTestMax: 10,
+        yWrittenObt: 0, yWrittenMax: 70,
+        yOralObt: 0, yOralMax: 20,
+        yPracObt: 0, yPracMax: 0,
+      };
+
+      const updated = { ...current, [field]: safeVal };
+
+      // Auto-sync max if syncHyAnnualMax is checked and user edited a max field
+      if (syncHyAnnualMax) {
+        if (field === 'hyWrittenMax') updated.yWrittenMax = safeVal;
+        if (field === 'yWrittenMax') updated.hyWrittenMax = safeVal;
+        if (field === 'hyOralMax') updated.yOralMax = safeVal;
+        if (field === 'yOralMax') updated.hyOralMax = safeVal;
+        if (field === 'hyPracMax') updated.yPracMax = safeVal;
+        if (field === 'yPracMax') updated.hyPracMax = safeVal;
+        if (field === 'hyTestMax') updated.yTestMax = safeVal;
+        if (field === 'yTestMax') updated.hyTestMax = safeVal;
+      }
+
+      return {
+        ...prev,
+        [studentId]: updated
+      };
+    });
+    setIsSubjectAnnualSaved(false);
+  };
+
+  const handleApplySubjectAnnualBulkMax = (
+    component: 'written' | 'oral' | 'prac' | 'test',
+    val: number
+  ) => {
+    if (isNaN(val) || val <= 0) return;
+
+    setSubjectAnnualMarks(prev => {
+      const next = { ...prev };
+      classStudents.forEach(st => {
+        const current = next[st.id] || {
+          hyTestObt: 0, hyTestMax: 10,
+          hyWrittenObt: 0, hyWrittenMax: 70,
+          hyOralObt: 0, hyOralMax: 20,
+          hyPracObt: 0, hyPracMax: 0,
+          yTestObt: 0, yTestMax: 10,
+          yWrittenObt: 0, yWrittenMax: 70,
+          yOralObt: 0, yOralMax: 20,
+          yPracObt: 0, yPracMax: 0,
+        };
+
+        if (component === 'written') {
+          next[st.id] = {
+            ...current,
+            hyWrittenMax: val,
+            yWrittenMax: syncHyAnnualMax ? val : current.yWrittenMax
+          };
+        } else if (component === 'oral') {
+          next[st.id] = {
+            ...current,
+            hyOralMax: val,
+            yOralMax: syncHyAnnualMax ? val : current.yOralMax
+          };
+        } else if (component === 'prac') {
+          next[st.id] = {
+            ...current,
+            hyPracMax: val,
+            yPracMax: syncHyAnnualMax ? val : current.yPracMax
+          };
+        } else if (component === 'test') {
+          next[st.id] = {
+            ...current,
+            hyTestMax: val,
+            yTestMax: syncHyAnnualMax ? val : current.yTestMax
+          };
+        }
+      });
+      return next;
+    });
+
+    if (component === 'written') setBulkAnnualWrittenMax(val);
+    if (component === 'oral') setBulkAnnualOralMax(val);
+    if (component === 'prac') setBulkAnnualPracMax(val);
+    if (component === 'test') setBulkAnnualTestMax(val);
+    setIsSubjectAnnualSaved(false);
+  };
+
+  const handleApplyStandardBalancedPreset = (type: 'standard' | 'practical' | 'written-oral-only') => {
+    setSubjectAnnualMarks(prev => {
+      const next = { ...prev };
+      classStudents.forEach(st => {
+        const current = next[st.id] || {
+          hyTestObt: 0, hyTestMax: 10,
+          hyWrittenObt: 0, hyWrittenMax: 70,
+          hyOralObt: 0, hyOralMax: 20,
+          hyPracObt: 0, hyPracMax: 0,
+          yTestObt: 0, yTestMax: 10,
+          yWrittenObt: 0, yWrittenMax: 70,
+          yOralObt: 0, yOralMax: 20,
+          yPracObt: 0, yPracMax: 0,
+        };
+
+        if (type === 'standard') {
+          next[st.id] = {
+            ...current,
+            hyTestMax: 10, yTestMax: 10,
+            hyWrittenMax: 70, yWrittenMax: 70,
+            hyOralMax: 20, yOralMax: 20,
+            hyPracMax: 0, yPracMax: 0
+          };
+        } else if (type === 'practical') {
+          next[st.id] = {
+            ...current,
+            hyTestMax: 10, yTestMax: 10,
+            hyWrittenMax: 60, yWrittenMax: 60,
+            hyOralMax: 0, yOralMax: 0,
+            hyPracMax: 30, yPracMax: 30
+          };
+        } else if (type === 'written-oral-only') {
+          next[st.id] = {
+            ...current,
+            hyTestMax: 0, yTestMax: 0,
+            hyWrittenMax: 80, yWrittenMax: 80,
+            hyOralMax: 20, yOralMax: 20,
+            hyPracMax: 0, yPracMax: 0
+          };
+        }
+      });
+      return next;
+    });
+
+    if (type === 'standard') {
+      setShowAnnualTestCols(true);
+      setShowAnnualOralCols(true);
+      setShowAnnualPracCols(false);
+      setBulkAnnualTestMax(10);
+      setBulkAnnualWrittenMax(70);
+      setBulkAnnualOralMax(20);
+      setBulkAnnualPracMax(0);
+    } else if (type === 'practical') {
+      setShowAnnualTestCols(true);
+      setShowAnnualOralCols(false);
+      setShowAnnualPracCols(true);
+      setBulkAnnualTestMax(10);
+      setBulkAnnualWrittenMax(60);
+      setBulkAnnualOralMax(0);
+      setBulkAnnualPracMax(30);
+    } else if (type === 'written-oral-only') {
+      setShowAnnualTestCols(false);
+      setShowAnnualOralCols(true);
+      setShowAnnualPracCols(false);
+      setBulkAnnualWrittenMax(80);
+      setBulkAnnualOralMax(20);
+      setBulkAnnualPracMax(0);
+    }
+    setIsSubjectAnnualSaved(false);
+  };
+
+  const handleSaveSubjectAnnualDraft = () => {
+    const draftKey = `edumanage_subj_annual_draft_${selectedClass}_${subject}`;
+    try {
+      localStorage.setItem(draftKey, JSON.stringify({
+        timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        class: selectedClass,
+        subject,
+        data: subjectAnnualMarks,
+        showAnnualTestCols,
+        showAnnualOralCols,
+        showAnnualPracCols
+      }));
+      setIsSubjectAnnualDraftSaved(true);
+      setTimeout(() => setIsSubjectAnnualDraftSaved(false), 3000);
+      setSubjectAnnualDraftInfo({
+        timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        count: Object.keys(subjectAnnualMarks).length
+      });
+    } catch (e) {
+      alert('ड्राफ्ट सुरक्षित करने में विफल रहा।');
+    }
+  };
+
+  const handleRestoreSubjectAnnualDraft = () => {
+    const draftKey = `edumanage_subj_annual_draft_${selectedClass}_${subject}`;
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed.data) {
+          setSubjectAnnualMarks(parsed.data);
+          if (parsed.showAnnualTestCols !== undefined) setShowAnnualTestCols(parsed.showAnnualTestCols);
+          if (parsed.showAnnualOralCols !== undefined) setShowAnnualOralCols(parsed.showAnnualOralCols);
+          if (parsed.showAnnualPracCols !== undefined) setShowAnnualPracCols(parsed.showAnnualPracCols);
+          setSubjectAnnualDraftInfo(null);
+          setIsSubjectAnnualSaved(false);
+        }
+      }
+    } catch (e) {
+      alert('ड्राफ्ट लोड करने में त्रुटि हुई।');
+    }
+  };
+
+  const handleDiscardSubjectAnnualDraft = () => {
+    const draftKey = `edumanage_subj_annual_draft_${selectedClass}_${subject}`;
+    localStorage.removeItem(draftKey);
+    setSubjectAnnualDraftInfo(null);
+  };
+
+  const handleClearSubjectAnnualMarks = () => {
+    if (!window.confirm(`क्या आप ${selectedClass} के लिए ${subject} के सभी अंक रीसेट करना चाहते हैं?`)) {
+      return;
+    }
+    const emptyMap: Record<string, SubjectAnnualRowMarks> = {};
+    classStudents.forEach(st => {
+      emptyMap[st.id] = {
+        hyTestObt: 0, hyTestMax: 10,
+        hyWrittenObt: 0, hyWrittenMax: 70,
+        hyOralObt: 0, hyOralMax: 20,
+        hyPracObt: 0, hyPracMax: 0,
+        yTestObt: 0, yTestMax: 10,
+        yWrittenObt: 0, yWrittenMax: 70,
+        yOralObt: 0, yOralMax: 20,
+        yPracObt: 0, yPracMax: 0
+      };
+    });
+    setSubjectAnnualMarks(emptyMap);
+    handleDiscardSubjectAnnualDraft();
+    setIsSubjectAnnualSaved(false);
+  };
+
+  const handleSaveSubjectAnnualMarks = async () => {
+    if (classStudents.length === 0) return;
+    setIsSubjectAnnualSaving(true);
+    try {
+      const marksToSave: Omit<ExamMark, 'id' | 'date' | 'schoolId'>[] = [];
+      const normalizedSub = normalizeSubject(subject);
+
+      classStudents.forEach(st => {
+        const row = subjectAnnualMarks[st.id];
+        if (!row) return;
+
+        // 1. Half-Yearly Test (if test cols enabled or value > 0)
+        if (showAnnualTestCols || row.hyTestObt > 0) {
+          marksToSave.push({
+            studentId: st.id,
+            teacherId: currentUser?.id || 'admin',
+            examType: 'Half-Yearly Test',
+            subject: normalizedSub,
+            marksObtained: Number(row.hyTestObt || 0),
+            maxMarks: Number(row.hyTestMax || 10)
+          });
+        }
+
+        // 2. Half-Yearly Exam (Written + Oral + Practical)
+        marksToSave.push({
+          studentId: st.id,
+          teacherId: currentUser?.id || 'admin',
+          examType: 'Half-Yearly Exam',
+          subject: normalizedSub,
+          marksObtained: Number(row.hyWrittenObt || 0),
+          maxMarks: Number(row.hyWrittenMax || 70),
+          oralMarks: showAnnualOralCols ? Number(row.hyOralObt || 0) : undefined,
+          oralMaxMarks: showAnnualOralCols ? Number(row.hyOralMax || 20) : undefined,
+          practicalMarks: showAnnualPracCols ? Number(row.hyPracObt || 0) : undefined,
+          practicalMaxMarks: showAnnualPracCols ? Number(row.hyPracMax || 0) : undefined
+        });
+
+        // 3. Yearly Test (if test cols enabled or value > 0)
+        if (showAnnualTestCols || row.yTestObt > 0) {
+          marksToSave.push({
+            studentId: st.id,
+            teacherId: currentUser?.id || 'admin',
+            examType: 'Yearly Test',
+            subject: normalizedSub,
+            marksObtained: Number(row.yTestObt || 0),
+            maxMarks: Number(row.yTestMax || 10)
+          });
+        }
+
+        // 4. Yearly Exam (Written + Oral + Practical)
+        marksToSave.push({
+          studentId: st.id,
+          teacherId: currentUser?.id || 'admin',
+          examType: 'Yearly Exam',
+          subject: normalizedSub,
+          marksObtained: Number(row.yWrittenObt || 0),
+          maxMarks: Number(row.yWrittenMax || 70),
+          oralMarks: showAnnualOralCols ? Number(row.yOralObt || 0) : undefined,
+          oralMaxMarks: showAnnualOralCols ? Number(row.yOralMax || 20) : undefined,
+          practicalMarks: showAnnualPracCols ? Number(row.yPracObt || 0) : undefined,
+          practicalMaxMarks: showAnnualPracCols ? Number(row.yPracMax || 0) : undefined
+        });
+      });
+
+      await importMarks(marksToSave);
+
+      // Clean up draft after successful DB save
+      const draftKey = `edumanage_subj_annual_draft_${selectedClass}_${subject}`;
+      localStorage.removeItem(draftKey);
+      setSubjectAnnualDraftInfo(null);
+
+      setIsSubjectAnnualSaved(true);
+      setTimeout(() => setIsSubjectAnnualSaved(false), 4500);
+    } catch (err) {
+      console.error('Failed to save subject annual marks:', err);
+      alert('अंक सुरक्षित करने में त्रुटि हुई।');
+    } finally {
+      setIsSubjectAnnualSaving(false);
+    }
+  };
+
+  // -------------------------------------------------------------
+  // HELPERS & HANDLERS: ATTENDANCE LEDGER (MODE 5)
   // -------------------------------------------------------------
   const getStudentPresentDays = (st: Student): number => {
     if (attendancePresentMap[st.id] !== undefined) return attendancePresentMap[st.id];
@@ -1010,7 +1848,7 @@ export function ExamResults() {
             }`}
           >
             <Award className="w-3.5 h-3.5" />
-            <span>1. विषयवार प्रविष्टि (Subject-wise Fast Entry)</span>
+            <span>1. एकल परीक्षा (Fast Single Exam)</span>
           </button>
 
           {/* Mode 2: Student 4-in-1 Mixed Exams */}
@@ -1024,10 +1862,7 @@ export function ExamResults() {
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
-            <span>2. 4-इन-1 छात्र मार्कशीट (All 4 Exams Mixed)</span>
-            <span className="bg-purple-300/40 text-white text-[9px] px-1 py-0.2 rounded font-black">
-              New
-            </span>
+            <span>2. 4-इन-1 छात्र मार्कशीट (Student 360°)</span>
           </button>
 
           {/* Mode 3: Class Master Grid */}
@@ -1044,7 +1879,43 @@ export function ExamResults() {
             <span>3. कक्षा मास्टर ग्रिड (All Subjects Matrix)</span>
           </button>
 
-          {/* Mode 4: Report Card Attendance */}
+          {/* Mode 4: Subject Annual Comprehensive Ledger */}
+          <button
+            type="button"
+            onClick={() => setActiveMode('subject-annual-ledger')}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              activeMode === 'subject-annual-ledger'
+                ? 'bg-teal-700 text-white shadow-sm ring-2 ring-teal-300'
+                : 'bg-teal-50 text-teal-900 hover:bg-teal-100 border border-teal-200'
+            }`}
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+            <span>4. विषय-वार वार्षिक लेजर (Senior Ledger)</span>
+          </button>
+
+          {/* Mode 5: Pre-Primary / Nursery / LKG / UKG Special Mode */}
+          <button
+            type="button"
+            onClick={() => {
+              setActiveMode('pre-primary-junior');
+              if (!isPrePrimaryGrade(selectedClass)) {
+                setSelectedClass('Nursery');
+              }
+            }}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              activeMode === 'pre-primary-junior'
+                ? 'bg-pink-600 text-white shadow-sm ring-2 ring-pink-300 font-black'
+                : 'bg-pink-50 text-pink-900 hover:bg-pink-100 border border-pink-200'
+            }`}
+          >
+            <span>🎒</span>
+            <span>5. नर्सरी / LKG / UKG ग्रेडिंग (Test + Written + Oral)</span>
+            <span className="bg-amber-300 text-slate-950 text-[9px] px-1 py-0.2 rounded font-black">
+              No Practical
+            </span>
+          </button>
+
+          {/* Mode 6: Report Card Attendance */}
           <button
             type="button"
             onClick={() => setActiveMode('attendance')}
@@ -1055,7 +1926,7 @@ export function ExamResults() {
             }`}
           >
             <Calendar className="w-3.5 h-3.5" />
-            <span>4. उपस्थिति लेजर (Attendance Sync)</span>
+            <span>6. उपस्थिति लेजर (Attendance Sync)</span>
           </button>
         </div>
 
@@ -1182,11 +2053,14 @@ export function ExamResults() {
                 value={matrixPattern} 
                 onChange={e => setMatrixPattern(e.target.value as MatrixPattern)}
               >
-                <option value="written-oral">📝 Written + Oral (लिखित + मौखिक)</option>
+                <option value="test-paper-i-ii">🔥 Test + Paper I + II (टेस्ट + प्रथम + द्वितीय पत्र)</option>
                 <option value="paper-i-ii">📑 Paper I + II (प्रथम + द्वितीय पत्र)</option>
+                <option value="test-written-oral">📝 Test + Written + Oral (टेस्ट + लिखित + मौखिक)</option>
+                <option value="written-oral">📝 Written + Oral (लिखित + मौखिक)</option>
+                <option value="test-written-prac">🧪 Test + Written + Practical (टेस्ट + लिखित + प्रैक्टिकल)</option>
                 <option value="written-prac">🧪 Written + Practical (लिखित + प्रायोगिक)</option>
                 <option value="written-only">✏️ Written Only (केवल लिखित)</option>
-                <option value="all-composite">🌟 All-in-One (Writ + Oral + Prac)</option>
+                <option value="all-composite">🌟 All-in-One (Test + I + II + Oral + Prac)</option>
               </Input>
             </div>
 
@@ -1207,12 +2081,86 @@ export function ExamResults() {
           </>
         )}
 
+        {/* Mode 4: Subject Annual Ledger Controls in Top Bar */}
+        {activeMode === 'subject-annual-ledger' && (
+          <>
+            <div className="w-56">
+              <Label className="font-bold text-slate-700 text-xs flex items-center justify-between">
+                <span className="flex items-center gap-1"><BookOpen className="w-3.5 h-3.5 text-teal-600" /> Select Subject (विषय)</span>
+                <span className="text-[10px] text-teal-700 font-bold">
+                  {subjects.indexOf(subject) + 1}/{subjects.length}
+                </span>
+              </Label>
+              <Input 
+                as="select" 
+                value={subject} 
+                onChange={e => {
+                  setSubject(e.target.value);
+                  setIsSubjectAnnualSaved(false);
+                }}
+              >
+                {subjects.map(sb => {
+                  const stat = subjectAnnualStats.find(s => isSameSubject(s.subject, sb));
+                  const isDone = stat?.isComplete;
+                  return (
+                    <option key={sb} value={sb}>
+                      {sb} {isDone ? '(पूर्ण ✓)' : `(${stat?.filledStudents || 0}/${stat?.totalStudents || 0})`}
+                    </option>
+                  );
+                })}
+              </Input>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5 pb-1 self-end">
+              <label className="flex items-center gap-1 text-[11px] font-bold text-slate-700 cursor-pointer bg-slate-100 hover:bg-slate-200 px-2 py-1.5 rounded-lg border border-slate-300">
+                <input 
+                  type="checkbox"
+                  checked={showAnnualTestCols}
+                  onChange={e => setShowAnnualTestCols(e.target.checked)}
+                  className="rounded text-teal-600 focus:ring-teal-500 w-3.5 h-3.5"
+                />
+                <span>Tests (टेस्ट)</span>
+              </label>
+
+              <label className="flex items-center gap-1 text-[11px] font-bold text-slate-700 cursor-pointer bg-slate-100 hover:bg-slate-200 px-2 py-1.5 rounded-lg border border-slate-300">
+                <input 
+                  type="checkbox"
+                  checked={showAnnualOralCols}
+                  onChange={e => setShowAnnualOralCols(e.target.checked)}
+                  className="rounded text-amber-600 focus:ring-amber-500 w-3.5 h-3.5"
+                />
+                <span>मौखिक (Oral)</span>
+              </label>
+
+              <label className="flex items-center gap-1 text-[11px] font-bold text-slate-700 cursor-pointer bg-slate-100 hover:bg-slate-200 px-2 py-1.5 rounded-lg border border-slate-300">
+                <input 
+                  type="checkbox"
+                  checked={showAnnualPracCols}
+                  onChange={e => setShowAnnualPracCols(e.target.checked)}
+                  className="rounded text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5"
+                />
+                <span>प्रायोगिक (Prac)</span>
+              </label>
+
+              <label className="flex items-center gap-1 text-[11px] font-bold text-indigo-800 cursor-pointer bg-indigo-50 hover:bg-indigo-100 px-2 py-1.5 rounded-lg border border-indigo-200">
+                <input 
+                  type="checkbox"
+                  checked={syncHyAnnualMax}
+                  onChange={e => setSyncHyAnnualMax(e.target.checked)}
+                  className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"
+                />
+                <span>Sync HY & Yearly Max</span>
+              </label>
+            </div>
+          </>
+        )}
+
         {/* Student picker for Mode 2 */}
         {activeMode === 'student-mixed' && (
-          <div className="flex-1 min-w-[220px]">
+          <div className="flex-1 min-w-[240px]">
             <Label className="font-bold text-slate-700 text-xs flex items-center justify-between">
               <span className="flex items-center gap-1"><User className="w-3.5 h-3.5 text-purple-600" /> Select Student</span>
-              {classStudents.length > 0 && (
+              {(filteredStudents.length > 0 ? filteredStudents : classStudents).length > 0 && (
                 <span className="text-[10px] text-slate-400 font-normal">
                   Roll: {currentSelectedStudent?.rollNo || '-'} | SR: {currentSelectedStudent?.srNo || '-'}
                 </span>
@@ -1225,7 +2173,7 @@ export function ExamResults() {
                 onChange={e => setSelectedStudentId(e.target.value)}
                 className="flex-1 font-bold text-slate-800"
               >
-                {classStudents.map(st => (
+                {(filteredStudents.length > 0 ? filteredStudents : classStudents).map(st => (
                   <option key={st.id} value={st.id}>
                     Roll {st.rollNo || '-'} - {st.name} ({st.fatherName ? `S/o ${st.fatherName}` : st.grade})
                   </option>
@@ -1234,7 +2182,7 @@ export function ExamResults() {
               <button
                 type="button"
                 onClick={() => handleNavigateStudent('prev')}
-                disabled={classStudents.findIndex(s => s.id === selectedStudentId) <= 0}
+                disabled={(filteredStudents.length > 0 ? filteredStudents : classStudents).findIndex(s => s.id === selectedStudentId) <= 0}
                 className="p-1.5 rounded border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
                 title="Previous Student"
               >
@@ -1243,7 +2191,7 @@ export function ExamResults() {
               <button
                 type="button"
                 onClick={() => handleNavigateStudent('next')}
-                disabled={classStudents.findIndex(s => s.id === selectedStudentId) >= classStudents.length - 1}
+                disabled={(filteredStudents.length > 0 ? filteredStudents : classStudents).findIndex(s => s.id === selectedStudentId) >= (filteredStudents.length > 0 ? filteredStudents : classStudents).length - 1}
                 className="p-1.5 rounded border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
                 title="Next Student"
               >
@@ -1252,24 +2200,290 @@ export function ExamResults() {
             </div>
           </div>
         )}
-
-        {/* Search student box */}
-        <div className="flex-1 min-w-[160px]">
-          <Label className="font-bold text-slate-700 text-xs">Search Student</Label>
-          <div className="relative">
-            <span className="absolute inset-y-0 left-0 flex items-center pl-2.5 text-slate-400">
-              <Search className="w-3.5 h-3.5" />
-            </span>
-            <input 
-              type="text" 
-              placeholder="Filter by name, roll no..." 
-              value={searchQuery} 
-              onChange={e => setSearchQuery(e.target.value)} 
-              className="w-full text-xs bg-white border border-slate-300 rounded-lg pl-8 pr-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-2xs"
-            />
-          </div>
-        </div>
       </Card>
+
+      {/* ------------------------------------------------------------- */}
+      {/* GLOBAL STUDENT ORDERING & SMART FILTER BAR (ALL 5 MODES)      */}
+      {/* ------------------------------------------------------------- */}
+      <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs space-y-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2.5 pb-2 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 bg-indigo-50 text-indigo-700 rounded-lg border border-indigo-200">
+              <ArrowUpDown className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                  छात्र क्रम व फ़िल्टर (Student Ordering & Smart Filter)
+                </span>
+                <span className="bg-indigo-100 text-indigo-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-indigo-200">
+                  {filteredStudents.length} / {classStudents.length} छात्र
+                </span>
+                {studentProgressStats.pending > 0 ? (
+                  <span className="bg-amber-100 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border border-amber-200">
+                    <Clock className="w-3 h-3 text-amber-600" />
+                    <span>{studentProgressStats.pending} शेष (Pending)</span>
+                  </span>
+                ) : classStudents.length > 0 ? (
+                  <span className="bg-emerald-100 text-emerald-900 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border border-emerald-200">
+                    <CheckCircle className="w-3 h-3 text-emerald-600" />
+                    <span>100% अंक पूर्ण (Complete)</span>
+                  </span>
+                ) : null}
+              </div>
+              <p className="text-[11px] text-slate-500">
+                अंक चढ़ाने हेतु छात्रों को रोल नंबर, नाम (A to Z), पिता का नाम, या केवल बाकी (Pending) छात्रों के अनुसार क्रमबद्ध करें (सभी 5 सेक्शन में लागू):
+              </p>
+            </div>
+          </div>
+
+          {/* Quick Filter Reset Button */}
+          {(sortBy !== 'roll-asc' || marksFilter !== 'all' || genderFilter !== 'all' || sectionFilter !== 'all' || searchQuery.trim() !== '') && (
+            <button
+              type="button"
+              onClick={() => {
+                setSortBy('roll-asc');
+                setMarksFilter('all');
+                setGenderFilter('all');
+                setSectionFilter('all');
+                setSearchQuery('');
+              }}
+              className="text-[11px] font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 px-2.5 py-1 rounded-lg border border-rose-200 flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>फ़िल्टर रीसेट करें (Reset Filters)</span>
+            </button>
+          )}
+        </div>
+
+        {/* Filter Controls Row */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-12 gap-2.5 items-end">
+          {/* 1. Sorting Order Dropdown */}
+          <div className="lg:col-span-4">
+            <Label className="font-bold text-slate-700 text-xs flex items-center gap-1 mb-1">
+              <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-600" />
+              <span>छात्रों का क्रम (Sort Order):</span>
+            </Label>
+            <Input
+              as="select"
+              value={sortBy}
+              onChange={e => setSortBy(e.target.value as StudentSortOption)}
+              className="text-xs font-semibold bg-slate-50 border-slate-300"
+            >
+              <option value="roll-asc">🔢 रोल नंबर: 1 ➔ अंतिम (Roll No 1 to N)</option>
+              <option value="roll-desc">🔢 रोल नंबर: उल्टा N ➔ 1 (Roll No Desc)</option>
+              <option value="name-asc">🔤 नाम: वर्णमाला A ➔ Z (अ से ज्ञ)</option>
+              <option value="name-desc">🔤 नाम: उल्टा Z ➔ A</option>
+              <option value="father-asc">👨‍👦 पिता का नाम: A ➔ Z</option>
+              <option value="sr-asc">📜 स्कॉलर / SR No (आरोही)</option>
+              <option value="gender-boys">👦 छात्र पहले (Boys First)</option>
+              <option value="gender-girls">👧 छात्राएं पहले (Girls First)</option>
+            </Input>
+          </div>
+
+          {/* 2. Marks Status Filter */}
+          <div className="lg:col-span-3">
+            <Label className="font-bold text-slate-700 text-xs flex items-center gap-1 mb-1">
+              <Filter className="w-3.5 h-3.5 text-blue-600" />
+              <span>अंक स्थिति (Marks Status):</span>
+            </Label>
+            <div className="grid grid-cols-3 gap-1">
+              <button
+                type="button"
+                onClick={() => setMarksFilter('all')}
+                className={`py-1.5 px-1 rounded-lg text-[11px] font-bold text-center transition-all cursor-pointer border ${
+                  marksFilter === 'all'
+                    ? 'bg-blue-600 text-white border-blue-700 shadow-xs'
+                    : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border-slate-200'
+                }`}
+              >
+                सभी ({studentProgressStats.total})
+              </button>
+              <button
+                type="button"
+                onClick={() => setMarksFilter('pending')}
+                className={`py-1.5 px-1 rounded-lg text-[11px] font-bold text-center transition-all cursor-pointer border ${
+                  marksFilter === 'pending'
+                    ? 'bg-amber-500 text-slate-950 border-amber-600 shadow-xs font-black'
+                    : 'bg-amber-50 text-amber-900 hover:bg-amber-100 border-amber-200'
+                }`}
+                title="जिन छात्रों के अंक अभी बाकी हैं"
+              >
+                ⏳ बाकी ({studentProgressStats.pending})
+              </button>
+              <button
+                type="button"
+                onClick={() => setMarksFilter('completed')}
+                className={`py-1.5 px-1 rounded-lg text-[11px] font-bold text-center transition-all cursor-pointer border ${
+                  marksFilter === 'completed'
+                    ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
+                    : 'bg-emerald-50 text-emerald-900 hover:bg-emerald-100 border-emerald-200'
+                }`}
+                title="जिन छात्रों के अंक भरे जा चुके हैं"
+              >
+                ✅ पूर्ण ({studentProgressStats.filled})
+              </button>
+            </div>
+          </div>
+
+          {/* 3. Gender Filter */}
+          <div className="lg:col-span-2">
+            <Label className="font-bold text-slate-700 text-xs flex items-center gap-1 mb-1">
+              <Users className="w-3.5 h-3.5 text-purple-600" />
+              <span>लिंग (Gender):</span>
+            </Label>
+            <Input
+              as="select"
+              value={genderFilter}
+              onChange={e => setGenderFilter(e.target.value as StudentGenderFilter)}
+              className="text-xs font-semibold bg-slate-50 border-slate-300"
+            >
+              <option value="all">👥 All (सभी)</option>
+              <option value="Male">👦 छात्र (Boys)</option>
+              <option value="Female">👧 छात्राएं (Girls)</option>
+            </Input>
+          </div>
+
+          {/* 4. Section Filter / Search Filter */}
+          {availableSections.length > 0 ? (
+            <div className="lg:col-span-3">
+              <Label className="font-bold text-slate-700 text-xs flex items-center gap-1 mb-1">
+                <span>सेक्शन (Section):</span>
+              </Label>
+              <Input
+                as="select"
+                value={sectionFilter}
+                onChange={e => setSectionFilter(e.target.value as StudentSectionFilter)}
+                className="text-xs font-semibold bg-slate-50 border-slate-300"
+              >
+                <option value="all">सभी सेक्शन (All)</option>
+                {availableSections.map(sec => (
+                  <option key={sec} value={sec}>Section {sec}</option>
+                ))}
+              </Input>
+            </div>
+          ) : (
+            <div className="lg:col-span-3">
+              <Label className="font-bold text-slate-700 text-xs flex items-center gap-1 mb-1">
+                <Search className="w-3.5 h-3.5 text-slate-500" />
+                <span>खोजें (Search Student):</span>
+              </Label>
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="नाम, रोल नं, पिता का नाम..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-full text-xs bg-white border border-slate-300 rounded-lg pl-2.5 pr-7 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-2xs"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Quick Switch Chips for sorting */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-100">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] font-bold text-slate-400 uppercase">त्वरित क्रम (Quick Sort):</span>
+            <button
+              type="button"
+              onClick={() => setSortBy('roll-asc')}
+              className={`text-[10.5px] px-2 py-0.5 rounded-md font-bold transition-colors cursor-pointer border ${
+                sortBy === 'roll-asc'
+                  ? 'bg-indigo-600 text-white border-indigo-700'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200'
+              }`}
+            >
+              🔢 Roll No (1-N)
+            </button>
+            <button
+              type="button"
+              onClick={() => setSortBy('name-asc')}
+              className={`text-[10.5px] px-2 py-0.5 rounded-md font-bold transition-colors cursor-pointer border ${
+                sortBy === 'name-asc'
+                  ? 'bg-indigo-600 text-white border-indigo-700'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200'
+              }`}
+            >
+              🔤 Alphabetical (A-Z)
+            </button>
+            <button
+              type="button"
+              onClick={() => setSortBy('father-asc')}
+              className={`text-[10.5px] px-2 py-0.5 rounded-md font-bold transition-colors cursor-pointer border ${
+                sortBy === 'father-asc'
+                  ? 'bg-indigo-600 text-white border-indigo-700'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200'
+              }`}
+            >
+              👨‍👦 Father Name
+            </button>
+            <button
+              type="button"
+              onClick={() => setSortBy('sr-asc')}
+              className={`text-[10.5px] px-2 py-0.5 rounded-md font-bold transition-colors cursor-pointer border ${
+                sortBy === 'sr-asc'
+                  ? 'bg-indigo-600 text-white border-indigo-700'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200'
+              }`}
+            >
+              📜 SR No
+            </button>
+            <button
+              type="button"
+              onClick={() => setSortBy('gender-boys')}
+              className={`text-[10.5px] px-2 py-0.5 rounded-md font-bold transition-colors cursor-pointer border ${
+                sortBy === 'gender-boys'
+                  ? 'bg-purple-600 text-white border-purple-700'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200'
+              }`}
+            >
+              👦 Boys ➔ Girls
+            </button>
+            <button
+              type="button"
+              onClick={() => setSortBy('gender-girls')}
+              className={`text-[10.5px] px-2 py-0.5 rounded-md font-bold transition-colors cursor-pointer border ${
+                sortBy === 'gender-girls'
+                  ? 'bg-purple-600 text-white border-purple-700'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200'
+              }`}
+            >
+              👧 Girls ➔ Boys
+            </button>
+          </div>
+
+          {availableSections.length > 0 && (
+            <div className="relative min-w-[200px] flex-1 max-w-xs">
+              <input
+                type="text"
+                placeholder="नाम, रोल नं, पिता का नाम..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="w-full text-xs bg-white border border-slate-300 rounded-lg pl-2.5 pr-7 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-2xs"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* ========================================================================= */}
       {/* MODE 1: SINGLE SUBJECT QUICK MARKS ENTRY + BULK MAX MARKS SETTER          */}
@@ -2266,17 +3480,20 @@ export function ExamResults() {
                   <Sliders className="w-3.5 h-3.5 text-blue-600" /> परीक्षा पैटर्न:
                 </span>
                 {[
-                  { id: 'written-oral', label: '📝 लिखित + मौखिक (Writ + Oral)', desc: 'लिखित एवं मौखिक अंक अलग-अलग' },
-                  { id: 'paper-i-ii', label: '📑 प्रथम + द्वितीय पत्र (Paper I + II)', desc: 'Paper I एवं Paper II' },
+                  { id: 'test-paper-i-ii', label: '🔥 टेस्ट + प्रथम + द्वितीय पत्र (Test + Paper I + II)', desc: 'टेस्ट (10) + प्रथम पत्र (35) + द्वितीय पत्र (35) = 80 / 100' },
+                  { id: 'paper-i-ii', label: '📑 प्रथम + द्वितीय पत्र (Paper I + II)', desc: 'Paper I (50) + Paper II (50) = 100' },
+                  { id: 'test-written-oral', label: '📝🗣️ टेस्ट + लिखित + मौखिक (Test + Writ + Oral)', desc: 'टेस्ट (10) + लिखित (70) + मौखिक (20) = 100' },
+                  { id: 'written-oral', label: '📝 लिखित + मौखिक (Writ + Oral)', desc: 'लिखित (80) + मौखिक (20) = 100' },
+                  { id: 'test-written-prac', label: '🧪 टेस्ट + लिखित + प्रायोगिक (Test + Writ + Prac)', desc: 'टेस्ट (10) + थ्योरी (60) + प्रैक्टिकल (30) = 100' },
                   { id: 'written-prac', label: '🧪 लिखित + प्रायोगिक (Writ + Prac)', desc: 'लिखित एवं प्रैक्टिकल' },
                   { id: 'written-only', label: '✏️ केवल लिखित (Written Only)', desc: 'एकल लिखित अंक' },
-                  { id: 'all-composite', label: '🌟 समग्र (All-in-One)', desc: 'लिखित + मौखिक + प्रायोगिक' }
+                  { id: 'all-composite', label: '🌟 समग्र ऑल-इन-वन (Test + I + II + Oral + Prac)', desc: 'टेस्ट + प्रथम + द्वितीय + मौखिक + प्रैक्टिकल' }
                 ].map(p => (
                   <button
                     key={p.id}
                     type="button"
                     onClick={() => setMatrixPattern(p.id as MatrixPattern)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                       matrixPattern === p.id
                         ? 'bg-blue-600 text-white shadow-sm ring-2 ring-blue-300'
                         : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
@@ -2363,70 +3580,119 @@ export function ExamResults() {
             </div>
           </div>
 
-          {/* 1-Click Single-Click Max Marks Presets Tool */}
-          <div className="bg-slate-900 text-white p-3 rounded-xl shadow-xs flex flex-wrap justify-between items-center gap-3">
-            <div className="flex flex-wrap items-center gap-4">
-              {/* Written / Paper I Max Presets */}
-              <div className="flex items-center gap-2 bg-slate-800 p-1.5 px-2.5 rounded-lg border border-slate-700">
-                <span className="text-xs font-bold text-blue-300 flex items-center gap-1">
-                  <Sliders className="w-3 h-3 text-blue-400" />
-                  {matrixPattern === 'paper-i-ii' ? 'Paper I Max:' : 'लिखित (Written) Max:'}
-                </span>
-                <div className="flex items-center gap-1">
-                  {[10, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100].map(val => (
-                    <button
-                      key={val}
-                      type="button"
-                      onClick={() => handleApplyMatrixBulkMaxMarks('max', val, matrixSubjectFilter)}
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded transition-all cursor-pointer ${
-                        bulkMatrixWrittenMax === val
-                          ? 'bg-blue-600 text-white shadow-xs font-black ring-1 ring-blue-300'
-                          : 'bg-slate-700 hover:bg-blue-500 text-slate-200'
-                      }`}
-                    >
-                      {val}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex items-center gap-1 pl-1 border-l border-slate-700">
-                  <input
-                    type="number"
-                    min="1"
-                    value={bulkMatrixWrittenMax}
-                    onChange={e => setBulkMatrixWrittenMax(Number(e.target.value))}
-                    className="w-10 text-center text-xs font-mono font-bold bg-slate-950 text-white rounded p-0.5 border border-slate-600 focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => handleApplyMatrixBulkMaxMarks('max', bulkMatrixWrittenMax, matrixSubjectFilter)}
-                    className="bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold px-2 py-1 rounded cursor-pointer"
-                  >
-                    Apply All
-                  </button>
-                </div>
+          {/* 1-Click Standard Presets & Max Marks Tool */}
+          <div className="bg-slate-900 text-white p-3 rounded-xl shadow-xs space-y-2.5">
+            {/* Quick 1-Click Universal Presets */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-800">
+              <span className="text-xs font-black text-amber-300 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                ⚡ 1-क्लिक मानक परीक्षा प्रारूप प्रीसेट (1-Click Grading Presets):
+              </span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleApplyMatrixPreset('test-paper-i-ii-80')}
+                  className="bg-amber-500 hover:bg-amber-600 text-slate-950 text-[11px] font-black px-2.5 py-1 rounded-lg transition-all shadow-xs cursor-pointer"
+                  title="Test 10 + Paper I 35 + Paper II 35 = 80 Total"
+                >
+                  🔥 10 Test + 35 Paper I + 35 Paper II (=80)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyMatrixPreset('test-paper-i-ii-100')}
+                  className="bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all shadow-xs cursor-pointer"
+                  title="Test 10 + Paper I 45 + Paper II 45 = 100 Total"
+                >
+                  🌟 10 Test + 45 Paper I + 45 Paper II (=100)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyMatrixPreset('paper-i-ii-100')}
+                  className="bg-purple-600 hover:bg-purple-700 text-white text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all shadow-xs cursor-pointer"
+                  title="50 Paper I + 50 Paper II = 100 Total"
+                >
+                  📑 50 Paper I + 50 Paper II (=100)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyMatrixPreset('test-written-oral-100')}
+                  className="bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all shadow-xs cursor-pointer"
+                  title="10 Test + 70 Written + 20 Oral = 100 Total"
+                >
+                  📝 10 Test + 70 Written + 20 Oral (=100)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyMatrixPreset('test-theory-prac-100')}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all shadow-xs cursor-pointer"
+                  title="10 Test + 60 Theory + 30 Practical = 100 Total"
+                >
+                  🧪 10 Test + 60 Theory + 30 Prac (=100)
+                </button>
               </div>
+            </div>
 
-              {/* Oral / Paper II / Practical Max Presets (when applicable) */}
-              {matrixPattern !== 'written-only' && (
-                <div className="flex items-center gap-2 bg-slate-800 p-1.5 px-2.5 rounded-lg border border-slate-700">
-                  <span className="text-xs font-bold text-amber-300 flex items-center gap-1">
-                    <FlaskConical className="w-3 h-3 text-amber-400" />
-                    {matrixPattern === 'paper-i-ii'
-                      ? 'Paper II Max:'
-                      : matrixPattern === 'written-prac'
-                      ? 'प्रायोगिक (Prac) Max:'
-                      : 'मौखिक (Oral) Max:'}
+            {/* Custom Max Marks Controllers */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                {/* 1. Test Max Controller */}
+                {(matrixPattern === 'test-paper-i-ii' || matrixPattern === 'test-written-oral' || matrixPattern === 'test-written-prac' || matrixPattern === 'all-composite') && (
+                  <div className="flex items-center gap-1.5 bg-slate-800 p-1.5 px-2.5 rounded-lg border border-amber-500/40">
+                    <span className="text-xs font-bold text-amber-300 flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-amber-400" />
+                      Test Max:
+                    </span>
+                    <div className="flex items-center gap-1">
+                      {[0, 10, 15, 20, 25].map(val => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => handleApplyMatrixBulkMaxMarks('testMax', val, matrixSubjectFilter)}
+                          className={`text-[10px] font-bold px-1.5 py-0.5 rounded transition-all cursor-pointer ${
+                            bulkMatrixTestMax === val
+                              ? 'bg-amber-500 text-slate-950 shadow-xs font-black'
+                              : 'bg-slate-700 hover:bg-amber-400 hover:text-slate-950 text-slate-200'
+                          }`}
+                        >
+                          {val === 0 ? 'Off' : val}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-1 pl-1 border-l border-slate-700">
+                      <input
+                        type="number"
+                        min="0"
+                        value={bulkMatrixTestMax}
+                        onChange={e => setBulkMatrixTestMax(Number(e.target.value))}
+                        className="w-9 text-center text-xs font-mono font-bold bg-slate-950 text-amber-300 rounded p-0.5 border border-amber-600/50 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleApplyMatrixBulkMaxMarks('testMax', bulkMatrixTestMax, matrixSubjectFilter)}
+                        className="bg-amber-500 hover:bg-amber-600 text-slate-950 text-[10px] font-bold px-1.5 py-1 rounded cursor-pointer"
+                      >
+                        Set
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* 2. Paper I / Written Max Controller */}
+                <div className="flex items-center gap-1.5 bg-slate-800 p-1.5 px-2.5 rounded-lg border border-blue-500/40">
+                  <span className="text-xs font-bold text-blue-300 flex items-center gap-1">
+                    <Sliders className="w-3 h-3 text-blue-400" />
+                    {(matrixPattern === 'test-paper-i-ii' || matrixPattern === 'paper-i-ii') ? 'Paper I Max:' : 'Written Max:'}
                   </span>
                   <div className="flex items-center gap-1">
-                    {[10, 15, 20, 25, 30, 40, 50].map(val => (
+                    {[25, 35, 40, 45, 50, 60, 70, 80, 100].map(val => (
                       <button
                         key={val}
                         type="button"
-                        onClick={() => handleApplyMatrixBulkMaxMarks('oralMax', val, matrixSubjectFilter)}
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded transition-all cursor-pointer ${
-                          bulkMatrixOralPracMax === val
-                            ? 'bg-amber-600 text-white shadow-xs font-black ring-1 ring-amber-300'
-                            : 'bg-slate-700 hover:bg-amber-500 text-slate-200'
+                        onClick={() => handleApplyMatrixBulkMaxMarks('max', val, matrixSubjectFilter)}
+                        className={`text-[10px] font-bold px-1.5 py-0.5 rounded transition-all cursor-pointer ${
+                          bulkMatrixWrittenMax === val
+                            ? 'bg-blue-600 text-white shadow-xs font-black'
+                            : 'bg-slate-700 hover:bg-blue-500 text-slate-200'
                         }`}
                       >
                         {val}
@@ -2437,29 +3703,113 @@ export function ExamResults() {
                     <input
                       type="number"
                       min="1"
-                      value={bulkMatrixOralPracMax}
-                      onChange={e => setBulkMatrixOralPracMax(Number(e.target.value))}
+                      value={bulkMatrixWrittenMax}
+                      onChange={e => setBulkMatrixWrittenMax(Number(e.target.value))}
                       className="w-10 text-center text-xs font-mono font-bold bg-slate-950 text-white rounded p-0.5 border border-slate-600 focus:outline-none"
                     />
                     <button
                       type="button"
-                      onClick={() => handleApplyMatrixBulkMaxMarks('oralMax', bulkMatrixOralPracMax, matrixSubjectFilter)}
-                      className="bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold px-2 py-1 rounded cursor-pointer"
+                      onClick={() => handleApplyMatrixBulkMaxMarks('max', bulkMatrixWrittenMax, matrixSubjectFilter)}
+                      className="bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold px-1.5 py-1 rounded cursor-pointer"
                     >
-                      Apply All
+                      Set
                     </button>
                   </div>
                 </div>
-              )}
-            </div>
 
-            {/* Quick Status Note */}
-            <div className="text-[10.5px] text-slate-300">
-              {matrixSubjectFilter !== 'ALL' ? (
-                <span className="text-amber-300 font-bold">फ़िल्टर: केवल "{matrixSubjectFilter}"</span>
-              ) : (
-                <span>1-क्लिक में सभी विषयों के पूर्णांक (Max Marks) सेट करें</span>
-              )}
+                {/* 3. Paper II Max Controller */}
+                {(matrixPattern === 'test-paper-i-ii' || matrixPattern === 'paper-i-ii') && (
+                  <div className="flex items-center gap-1.5 bg-slate-800 p-1.5 px-2.5 rounded-lg border border-purple-500/40">
+                    <span className="text-xs font-bold text-purple-300 flex items-center gap-1">
+                      <Layers className="w-3 h-3 text-purple-400" />
+                      Paper II Max:
+                    </span>
+                    <div className="flex items-center gap-1">
+                      {[25, 35, 40, 45, 50].map(val => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => handleApplyMatrixBulkMaxMarks('paper2Max', val, matrixSubjectFilter)}
+                          className={`text-[10px] font-bold px-1.5 py-0.5 rounded transition-all cursor-pointer ${
+                            bulkMatrixPaper2Max === val
+                              ? 'bg-purple-600 text-white shadow-xs font-black'
+                              : 'bg-slate-700 hover:bg-purple-500 text-slate-200'
+                          }`}
+                        >
+                          {val}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-1 pl-1 border-l border-slate-700">
+                      <input
+                        type="number"
+                        min="1"
+                        value={bulkMatrixPaper2Max}
+                        onChange={e => setBulkMatrixPaper2Max(Number(e.target.value))}
+                        className="w-10 text-center text-xs font-mono font-bold bg-slate-950 text-purple-300 rounded p-0.5 border border-purple-600/50 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleApplyMatrixBulkMaxMarks('paper2Max', bulkMatrixPaper2Max, matrixSubjectFilter)}
+                        className="bg-purple-600 hover:bg-purple-700 text-white text-[10px] font-bold px-1.5 py-1 rounded cursor-pointer"
+                      >
+                        Set
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* 4. Oral / Prac Max Controller */}
+                {(matrixPattern === 'written-oral' || matrixPattern === 'test-written-oral' || matrixPattern === 'written-prac' || matrixPattern === 'test-written-prac' || matrixPattern === 'all-composite') && (
+                  <div className="flex items-center gap-1.5 bg-slate-800 p-1.5 px-2.5 rounded-lg border border-teal-500/40">
+                    <span className="text-xs font-bold text-teal-300 flex items-center gap-1">
+                      <FlaskConical className="w-3 h-3 text-teal-400" />
+                      {(matrixPattern === 'written-prac' || matrixPattern === 'test-written-prac') ? 'Prac Max:' : 'Oral Max:'}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      {[10, 15, 20, 25, 30, 40, 50].map(val => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => handleApplyMatrixBulkMaxMarks('oralMax', val, matrixSubjectFilter)}
+                          className={`text-[10px] font-bold px-1.5 py-0.5 rounded transition-all cursor-pointer ${
+                            bulkMatrixOralPracMax === val
+                              ? 'bg-teal-600 text-white shadow-xs font-black'
+                              : 'bg-slate-700 hover:bg-teal-500 text-slate-200'
+                          }`}
+                        >
+                          {val}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-1 pl-1 border-l border-slate-700">
+                      <input
+                        type="number"
+                        min="1"
+                        value={bulkMatrixOralPracMax}
+                        onChange={e => setBulkMatrixOralPracMax(Number(e.target.value))}
+                        className="w-10 text-center text-xs font-mono font-bold bg-slate-950 text-teal-300 rounded p-0.5 border border-teal-600/50 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleApplyMatrixBulkMaxMarks('oralMax', bulkMatrixOralPracMax, matrixSubjectFilter)}
+                        className="bg-teal-600 hover:bg-teal-700 text-white text-[10px] font-bold px-1.5 py-1 rounded cursor-pointer"
+                      >
+                        Set
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Status Note */}
+              <div className="text-[10.5px] text-slate-300">
+                {matrixSubjectFilter !== 'ALL' ? (
+                  <span className="text-amber-300 font-bold">फ़िल्टर: केवल "{matrixSubjectFilter}"</span>
+                ) : (
+                  <span>प्रत्येक छात्र के सेल में टेस्ट, पेपर I एवं पेपर II अंक व पूर्णांक अलग-अलग संपादन योग्य हैं</span>
+                )}
+              </div>
             </div>
           </div>
 
@@ -2497,7 +3847,13 @@ export function ExamResults() {
                     {visibleMatrixSubjects.map(sub => {
                       const stat = matrixSubjectStats.find(s => isSameSubject(s.subject, sub));
                       const isComplete = stat?.isComplete;
-                      const colSpan = matrixPattern === 'all-composite' ? 4 : matrixPattern === 'written-only' ? 1 : 3;
+                      const colSpan = matrixPattern === 'all-composite' 
+                        ? 6 
+                        : (matrixPattern === 'test-paper-i-ii' || matrixPattern === 'test-written-oral' || matrixPattern === 'test-written-prac')
+                        ? 4 
+                        : (matrixPattern === 'paper-i-ii' || matrixPattern === 'written-oral' || matrixPattern === 'written-prac')
+                        ? 3 
+                        : 1;
 
                       return (
                         <th
@@ -2526,16 +3882,19 @@ export function ExamResults() {
                   {/* Sub Header Row for Components */}
                   <tr className="bg-slate-50 text-[8.5px] font-bold text-slate-600 border-b border-slate-200">
                     {visibleMatrixSubjects.map(sub => {
-                      if (matrixPattern === 'written-oral') {
+                      if (matrixPattern === 'test-paper-i-ii') {
                         return (
                           <React.Fragment key={`${sub}-subcols`}>
-                            <th className="px-1.5 py-1 text-center min-w-[65px] bg-blue-50/50 text-blue-900 border-r border-slate-200">
-                              लिखित (Writ)
+                            <th className="px-1 py-1 text-center min-w-[65px] bg-amber-50/70 text-amber-950 border-r border-slate-200">
+                              टेस्ट (Test)
                             </th>
-                            <th className="px-1.5 py-1 text-center min-w-[65px] bg-amber-50/50 text-amber-900 border-r border-slate-200">
-                              मौखिक (Oral)
+                            <th className="px-1 py-1 text-center min-w-[68px] bg-blue-50/70 text-blue-950 border-r border-slate-200">
+                              प्रथम I ({sub} I)
                             </th>
-                            <th className="px-1.5 py-1 text-center min-w-[50px] bg-slate-100 text-slate-700 border-r border-slate-300">
+                            <th className="px-1 py-1 text-center min-w-[68px] bg-purple-50/70 text-purple-950 border-r border-slate-200">
+                              द्वितीय II ({sub} II)
+                            </th>
+                            <th className="px-1 py-1 text-center min-w-[48px] bg-slate-100 text-slate-800 border-r border-slate-300">
                               कुल (Total)
                             </th>
                           </React.Fragment>
@@ -2544,13 +3903,64 @@ export function ExamResults() {
                       if (matrixPattern === 'paper-i-ii') {
                         return (
                           <React.Fragment key={`${sub}-subcols`}>
-                            <th className="px-1.5 py-1 text-center min-w-[65px] bg-blue-50/50 text-blue-900 border-r border-slate-200">
-                              प्रथम (Paper I)
+                            <th className="px-1.5 py-1 text-center min-w-[68px] bg-blue-50/50 text-blue-900 border-r border-slate-200">
+                              प्रथम I ({sub} I)
                             </th>
-                            <th className="px-1.5 py-1 text-center min-w-[65px] bg-purple-50/50 text-purple-900 border-r border-slate-200">
-                              द्वितीय (Paper II)
+                            <th className="px-1.5 py-1 text-center min-w-[68px] bg-purple-50/50 text-purple-900 border-r border-slate-200">
+                              द्वितीय II ({sub} II)
                             </th>
                             <th className="px-1.5 py-1 text-center min-w-[50px] bg-slate-100 text-slate-700 border-r border-slate-300">
+                              कुल (Total)
+                            </th>
+                          </React.Fragment>
+                        );
+                      }
+                      if (matrixPattern === 'test-written-oral') {
+                        return (
+                          <React.Fragment key={`${sub}-subcols`}>
+                            <th className="px-1 py-1 text-center min-w-[65px] bg-amber-50/70 text-amber-950 border-r border-slate-200">
+                              टेस्ट (Test)
+                            </th>
+                            <th className="px-1 py-1 text-center min-w-[68px] bg-blue-50/50 text-blue-900 border-r border-slate-200">
+                              लिखित (Writ)
+                            </th>
+                            <th className="px-1 py-1 text-center min-w-[68px] bg-teal-50/50 text-teal-900 border-r border-slate-200">
+                              मौखिक (Oral)
+                            </th>
+                            <th className="px-1 py-1 text-center min-w-[48px] bg-slate-100 text-slate-700 border-r border-slate-300">
+                              कुल (Total)
+                            </th>
+                          </React.Fragment>
+                        );
+                      }
+                      if (matrixPattern === 'written-oral') {
+                        return (
+                          <React.Fragment key={`${sub}-subcols`}>
+                            <th className="px-1.5 py-1 text-center min-w-[68px] bg-blue-50/50 text-blue-900 border-r border-slate-200">
+                              लिखित (Writ)
+                            </th>
+                            <th className="px-1.5 py-1 text-center min-w-[68px] bg-amber-50/50 text-amber-900 border-r border-slate-200">
+                              मौखिक (Oral)
+                            </th>
+                            <th className="px-1.5 py-1 text-center min-w-[50px] bg-slate-100 text-slate-700 border-r border-slate-300">
+                              कुल (Total)
+                            </th>
+                          </React.Fragment>
+                        );
+                      }
+                      if (matrixPattern === 'test-written-prac') {
+                        return (
+                          <React.Fragment key={`${sub}-subcols`}>
+                            <th className="px-1 py-1 text-center min-w-[65px] bg-amber-50/70 text-amber-950 border-r border-slate-200">
+                              टेस्ट (Test)
+                            </th>
+                            <th className="px-1 py-1 text-center min-w-[68px] bg-blue-50/50 text-blue-900 border-r border-slate-200">
+                              लिखित (Theory)
+                            </th>
+                            <th className="px-1 py-1 text-center min-w-[68px] bg-emerald-50/50 text-emerald-900 border-r border-slate-200">
+                              प्रायोगिक (Prac)
+                            </th>
+                            <th className="px-1 py-1 text-center min-w-[48px] bg-slate-100 text-slate-700 border-r border-slate-300">
                               कुल (Total)
                             </th>
                           </React.Fragment>
@@ -2559,10 +3969,10 @@ export function ExamResults() {
                       if (matrixPattern === 'written-prac') {
                         return (
                           <React.Fragment key={`${sub}-subcols`}>
-                            <th className="px-1.5 py-1 text-center min-w-[65px] bg-blue-50/50 text-blue-900 border-r border-slate-200">
+                            <th className="px-1.5 py-1 text-center min-w-[68px] bg-blue-50/50 text-blue-900 border-r border-slate-200">
                               लिखित (Theory)
                             </th>
-                            <th className="px-1.5 py-1 text-center min-w-[65px] bg-amber-50/50 text-amber-900 border-r border-slate-200">
+                            <th className="px-1.5 py-1 text-center min-w-[68px] bg-amber-50/50 text-amber-900 border-r border-slate-200">
                               प्रायोगिक (Prac)
                             </th>
                             <th className="px-1.5 py-1 text-center min-w-[50px] bg-slate-100 text-slate-700 border-r border-slate-300">
@@ -2574,13 +3984,19 @@ export function ExamResults() {
                       if (matrixPattern === 'all-composite') {
                         return (
                           <React.Fragment key={`${sub}-subcols`}>
+                            <th className="px-1 py-1 text-center min-w-[55px] bg-amber-50/70 text-amber-900 border-r border-slate-200">
+                              टेस्ट
+                            </th>
                             <th className="px-1 py-1 text-center min-w-[55px] bg-blue-50/50 text-blue-900 border-r border-slate-200">
-                              लिखित
+                              प्रथम I
                             </th>
                             <th className="px-1 py-1 text-center min-w-[55px] bg-purple-50/50 text-purple-900 border-r border-slate-200">
+                              द्वितीय II
+                            </th>
+                            <th className="px-1 py-1 text-center min-w-[55px] bg-teal-50/50 text-teal-900 border-r border-slate-200">
                               मौखिक
                             </th>
-                            <th className="px-1 py-1 text-center min-w-[55px] bg-amber-50/50 text-amber-900 border-r border-slate-200">
+                            <th className="px-1 py-1 text-center min-w-[55px] bg-emerald-50/50 text-emerald-900 border-r border-slate-200">
                               प्रायोगिक
                             </th>
                             <th className="px-1 py-1 text-center min-w-[45px] bg-slate-100 text-slate-700 border-r border-slate-300">
@@ -2623,36 +4039,59 @@ export function ExamResults() {
                         {/* Subject Input Cells */}
                         {visibleMatrixSubjects.map(sub => {
                           const cell = matrixMarks[`${st.id}:::${sub}`] || { 
+                            testObt: 0,
+                            testMax: 10,
                             obt: 0, 
-                            max: 80, 
+                            max: 35, 
+                            paper2Obt: 0,
+                            paper2Max: 35,
                             oralObt: 0, 
                             oralMax: 20, 
                             pracObt: 0, 
                             pracMax: 0 
                           };
 
+                          const testObt = Number(cell.testObt || 0);
+                          const testMax = Number(cell.testMax !== undefined ? cell.testMax : 10);
                           const writObt = Number(cell.obt || 0);
-                          const writMax = Number(cell.max || 80);
+                          const writMax = Number(cell.max || 35);
+                          const paper2Obt = Number(cell.paper2Obt || 0);
+                          const paper2Max = Number(cell.paper2Max !== undefined ? cell.paper2Max : 35);
                           const oralObt = Number(cell.oralObt || 0);
-                          const oralMax = Number(cell.oralMax || 20);
+                          const oralMax = Number(cell.oralMax !== undefined ? cell.oralMax : 20);
                           const pracObt = Number(cell.pracObt || 0);
-                          const pracMax = Number(cell.pracMax || 0);
+                          const pracMax = Number(cell.pracMax !== undefined ? cell.pracMax : 0);
 
                           let cellTotalObt = 0;
                           let cellTotalMax = 0;
 
-                          if (matrixPattern === 'written-oral') {
+                          if (matrixPattern === 'test-paper-i-ii') {
+                            cellTotalObt = testObt + writObt + paper2Obt;
+                            cellTotalMax = testMax + writMax + paper2Max;
+                          } else if (matrixPattern === 'paper-i-ii') {
+                            const p2O = paper2Obt > 0 ? paper2Obt : (oralObt > 0 ? oralObt : pracObt);
+                            const p2M = paper2Max > 0 ? paper2Max : (oralMax > 0 ? oralMax : (pracMax > 0 ? pracMax : 35));
+                            cellTotalObt = writObt + p2O;
+                            cellTotalMax = writMax + p2M;
+                          } else if (matrixPattern === 'test-written-oral') {
+                            cellTotalObt = testObt + writObt + oralObt;
+                            cellTotalMax = testMax + writMax + oralMax;
+                          } else if (matrixPattern === 'written-oral') {
                             cellTotalObt = writObt + oralObt;
                             cellTotalMax = writMax + oralMax;
-                          } else if (matrixPattern === 'paper-i-ii') {
-                            cellTotalObt = writObt + (oralObt > 0 ? oralObt : pracObt);
-                            cellTotalMax = writMax + (oralMax > 0 ? oralMax : (pracMax > 0 ? pracMax : 50));
+                          } else if (matrixPattern === 'test-written-prac') {
+                            const pO = pracObt > 0 ? pracObt : (paper2Obt > 0 ? paper2Obt : oralObt);
+                            const pM = pracMax > 0 ? pracMax : (paper2Max > 0 ? paper2Max : oralMax);
+                            cellTotalObt = testObt + writObt + pO;
+                            cellTotalMax = testMax + writMax + pM;
                           } else if (matrixPattern === 'written-prac') {
-                            cellTotalObt = writObt + (pracObt > 0 ? pracObt : oralObt);
-                            cellTotalMax = writMax + (pracMax > 0 ? pracMax : oralMax);
+                            const pO = pracObt > 0 ? pracObt : oralObt;
+                            const pM = pracMax > 0 ? pracMax : oralMax;
+                            cellTotalObt = writObt + pO;
+                            cellTotalMax = writMax + pM;
                           } else if (matrixPattern === 'all-composite') {
-                            cellTotalObt = writObt + oralObt + pracObt;
-                            cellTotalMax = writMax + oralMax + pracMax;
+                            cellTotalObt = testObt + writObt + paper2Obt + oralObt + pracObt;
+                            cellTotalMax = testMax + writMax + paper2Max + oralMax + pracMax;
                           } else {
                             cellTotalObt = writObt;
                             cellTotalMax = writMax;
@@ -2660,6 +4099,221 @@ export function ExamResults() {
 
                           studentRowTotalObt += cellTotalObt;
                           studentRowTotalMax += cellTotalMax;
+
+                          if (matrixPattern === 'test-paper-i-ii') {
+                            return (
+                              <React.Fragment key={`${st.id}-${sub}`}>
+                                {/* 1. Test Input */}
+                                <td className="px-1 py-1 text-center border-r border-slate-200 bg-amber-50/20">
+                                  <div className="flex items-center justify-center gap-0.5">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max={testMax}
+                                      value={testObt}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'testObt', Number(e.target.value))}
+                                      className="w-9 text-center font-mono font-bold text-xs border border-amber-300 rounded py-0.5 bg-white text-amber-950 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                    />
+                                    <span className="text-slate-400 text-[8px]">/</span>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      value={testMax}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'testMax', Number(e.target.value))}
+                                      className="w-7 text-center font-mono text-[9px] border border-slate-200 rounded py-0.5 bg-amber-50 text-amber-800 focus:outline-none"
+                                    />
+                                  </div>
+                                </td>
+
+                                {/* 2. Paper I Input */}
+                                <td className="px-1 py-1 text-center border-r border-slate-200 bg-blue-50/20">
+                                  <div className="flex items-center justify-center gap-0.5">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max={writMax}
+                                      value={writObt}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'obt', Number(e.target.value))}
+                                      className="w-9 text-center font-mono font-bold text-xs border border-blue-300 rounded py-0.5 bg-white text-blue-950 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    />
+                                    <span className="text-slate-400 text-[8px]">/</span>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      value={writMax}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'max', Number(e.target.value))}
+                                      className="w-7 text-center font-mono text-[9px] border border-slate-200 rounded py-0.5 bg-slate-100 text-slate-600 focus:outline-none"
+                                    />
+                                  </div>
+                                </td>
+
+                                {/* 3. Paper II Input */}
+                                <td className="px-1 py-1 text-center border-r border-slate-200 bg-purple-50/20">
+                                  <div className="flex items-center justify-center gap-0.5">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max={paper2Max}
+                                      value={paper2Obt}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'paper2Obt', Number(e.target.value))}
+                                      className="w-9 text-center font-mono font-bold text-xs border border-purple-300 rounded py-0.5 bg-white text-purple-950 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                                    />
+                                    <span className="text-slate-400 text-[8px]">/</span>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      value={paper2Max}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'paper2Max', Number(e.target.value))}
+                                      className="w-7 text-center font-mono text-[9px] border border-purple-50 text-purple-800 rounded py-0.5 focus:outline-none"
+                                    />
+                                  </div>
+                                </td>
+
+                                {/* 4. Total Sum Badge */}
+                                <td className="px-1 py-1 text-center border-r border-slate-300 bg-slate-50">
+                                  <span className={`font-mono font-black text-xs ${cellTotalObt > 0 ? 'text-slate-900' : 'text-slate-400'}`}>
+                                    {cellTotalObt}
+                                  </span>
+                                </td>
+                              </React.Fragment>
+                            );
+                          }
+
+                          if (matrixPattern === 'paper-i-ii') {
+                            return (
+                              <React.Fragment key={`${st.id}-${sub}`}>
+                                {/* Paper I Input */}
+                                <td className="px-1.5 py-1 text-center border-r border-slate-200 bg-blue-50/20">
+                                  <div className="flex items-center justify-center gap-0.5">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max={writMax}
+                                      value={writObt}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'obt', Number(e.target.value))}
+                                      className="w-10 text-center font-mono font-bold text-xs border border-blue-300 rounded py-0.5 bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    />
+                                    <span className="text-slate-400 text-[9px]">/</span>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      value={writMax}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'max', Number(e.target.value))}
+                                      className="w-8 text-center font-mono text-[9px] border border-slate-200 rounded py-0.5 bg-slate-100 text-slate-500 focus:outline-none"
+                                    />
+                                  </div>
+                                </td>
+
+                                {/* Paper II Input */}
+                                <td className="px-1.5 py-1 text-center border-r border-slate-200 bg-purple-50/20">
+                                  <div className="flex items-center justify-center gap-0.5">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max={paper2Max}
+                                      value={paper2Obt}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'paper2Obt', Number(e.target.value))}
+                                      className="w-10 text-center font-mono font-bold text-xs border border-purple-300 rounded py-0.5 bg-white text-purple-950 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                                    />
+                                    <span className="text-slate-400 text-[9px]">/</span>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      value={paper2Max}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'paper2Max', Number(e.target.value))}
+                                      className="w-8 text-center font-mono text-[9px] border border-slate-200 rounded py-0.5 bg-purple-50 text-purple-700 focus:outline-none"
+                                    />
+                                  </div>
+                                </td>
+
+                                {/* Total Badge */}
+                                <td className="px-1.5 py-1 text-center border-r border-slate-300 bg-slate-50">
+                                  <span className={`font-mono font-black text-xs ${cellTotalObt > 0 ? 'text-slate-800' : 'text-slate-400'}`}>
+                                    {cellTotalObt}
+                                  </span>
+                                </td>
+                              </React.Fragment>
+                            );
+                          }
+
+                          if (matrixPattern === 'test-written-oral') {
+                            return (
+                              <React.Fragment key={`${st.id}-${sub}`}>
+                                {/* Test Input */}
+                                <td className="px-1 py-1 text-center border-r border-slate-200 bg-amber-50/20">
+                                  <div className="flex items-center justify-center gap-0.5">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max={testMax}
+                                      value={testObt}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'testObt', Number(e.target.value))}
+                                      className="w-9 text-center font-mono font-bold text-xs border border-amber-300 rounded py-0.5 bg-white text-amber-950 focus:outline-none"
+                                    />
+                                    <span className="text-slate-400 text-[8px]">/</span>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      value={testMax}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'testMax', Number(e.target.value))}
+                                      className="w-7 text-center font-mono text-[9px] border border-slate-200 rounded py-0.5 bg-amber-50 text-amber-800 focus:outline-none"
+                                    />
+                                  </div>
+                                </td>
+
+                                {/* Written Input */}
+                                <td className="px-1 py-1 text-center border-r border-slate-200 bg-blue-50/20">
+                                  <div className="flex items-center justify-center gap-0.5">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max={writMax}
+                                      value={writObt}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'obt', Number(e.target.value))}
+                                      className="w-9 text-center font-mono font-bold text-xs border border-blue-300 rounded py-0.5 bg-white text-slate-900 focus:outline-none"
+                                    />
+                                    <span className="text-slate-400 text-[8px]">/</span>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      value={writMax}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'max', Number(e.target.value))}
+                                      className="w-7 text-center font-mono text-[9px] border border-slate-200 rounded py-0.5 bg-slate-100 text-slate-500 focus:outline-none"
+                                    />
+                                  </div>
+                                </td>
+
+                                {/* Oral Input */}
+                                <td className="px-1 py-1 text-center border-r border-slate-200 bg-teal-50/20">
+                                  <div className="flex items-center justify-center gap-0.5">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max={oralMax}
+                                      value={oralObt}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'oralObt', Number(e.target.value))}
+                                      className="w-9 text-center font-mono font-bold text-xs border border-teal-300 rounded py-0.5 bg-white text-teal-950 focus:outline-none"
+                                    />
+                                    <span className="text-slate-400 text-[8px]">/</span>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      value={oralMax}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'oralMax', Number(e.target.value))}
+                                      className="w-7 text-center font-mono text-[9px] border border-slate-200 rounded py-0.5 bg-teal-50 text-teal-700 focus:outline-none"
+                                    />
+                                  </div>
+                                </td>
+
+                                {/* Total Badge */}
+                                <td className="px-1 py-1 text-center border-r border-slate-300 bg-slate-50">
+                                  <span className={`font-mono font-black text-xs ${cellTotalObt > 0 ? 'text-slate-800' : 'text-slate-400'}`}>
+                                    {cellTotalObt}
+                                  </span>
+                                </td>
+                              </React.Fragment>
+                            );
+                          }
 
                           if (matrixPattern === 'written-oral') {
                             return (
@@ -2718,11 +4372,33 @@ export function ExamResults() {
                             );
                           }
 
-                          if (matrixPattern === 'paper-i-ii') {
+                          if (matrixPattern === 'test-written-prac') {
                             return (
                               <React.Fragment key={`${st.id}-${sub}`}>
-                                {/* Paper I Input */}
-                                <td className="px-1.5 py-1 text-center border-r border-slate-200 bg-blue-50/20">
+                                {/* Test Input */}
+                                <td className="px-1 py-1 text-center border-r border-slate-200 bg-amber-50/20">
+                                  <div className="flex items-center justify-center gap-0.5">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max={testMax}
+                                      value={testObt}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'testObt', Number(e.target.value))}
+                                      className="w-9 text-center font-mono font-bold text-xs border border-amber-300 rounded py-0.5 bg-white text-amber-950 focus:outline-none"
+                                    />
+                                    <span className="text-slate-400 text-[8px]">/</span>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      value={testMax}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'testMax', Number(e.target.value))}
+                                      className="w-7 text-center font-mono text-[9px] border border-slate-200 rounded py-0.5 bg-amber-50 text-amber-800 focus:outline-none"
+                                    />
+                                  </div>
+                                </td>
+
+                                {/* Theory Input */}
+                                <td className="px-1 py-1 text-center border-r border-slate-200 bg-blue-50/20">
                                   <div className="flex items-center justify-center gap-0.5">
                                     <input
                                       type="number"
@@ -2730,43 +4406,43 @@ export function ExamResults() {
                                       max={writMax}
                                       value={writObt}
                                       onChange={e => handleMatrixChange(st.id, sub, 'obt', Number(e.target.value))}
-                                      className="w-10 text-center font-mono font-bold text-xs border border-blue-300 rounded py-0.5 bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                      className="w-9 text-center font-mono font-bold text-xs border border-blue-300 rounded py-0.5 bg-white text-slate-900 focus:outline-none"
                                     />
-                                    <span className="text-slate-400 text-[9px]">/</span>
+                                    <span className="text-slate-400 text-[8px]">/</span>
                                     <input
                                       type="number"
                                       min="1"
                                       value={writMax}
                                       onChange={e => handleMatrixChange(st.id, sub, 'max', Number(e.target.value))}
-                                      className="w-8 text-center font-mono text-[9px] border border-slate-200 rounded py-0.5 bg-slate-100 text-slate-500 focus:outline-none"
+                                      className="w-7 text-center font-mono text-[9px] border border-slate-200 rounded py-0.5 bg-slate-100 text-slate-500 focus:outline-none"
                                     />
                                   </div>
                                 </td>
 
-                                {/* Paper II Input */}
-                                <td className="px-1.5 py-1 text-center border-r border-slate-200 bg-purple-50/20">
+                                {/* Practical Input */}
+                                <td className="px-1 py-1 text-center border-r border-slate-200 bg-emerald-50/20">
                                   <div className="flex items-center justify-center gap-0.5">
                                     <input
                                       type="number"
                                       min="0"
-                                      max={oralMax}
-                                      value={oralObt}
-                                      onChange={e => handleMatrixChange(st.id, sub, 'oralObt', Number(e.target.value))}
-                                      className="w-10 text-center font-mono font-bold text-xs border border-purple-300 rounded py-0.5 bg-white text-purple-950 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                                      max={pracMax}
+                                      value={pracObt}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'pracObt', Number(e.target.value))}
+                                      className="w-9 text-center font-mono font-bold text-xs border border-emerald-300 rounded py-0.5 bg-white text-emerald-950 focus:outline-none"
                                     />
-                                    <span className="text-slate-400 text-[9px]">/</span>
+                                    <span className="text-slate-400 text-[8px]">/</span>
                                     <input
                                       type="number"
                                       min="1"
-                                      value={oralMax}
-                                      onChange={e => handleMatrixChange(st.id, sub, 'oralMax', Number(e.target.value))}
-                                      className="w-8 text-center font-mono text-[9px] border border-slate-200 rounded py-0.5 bg-purple-50 text-purple-700 focus:outline-none"
+                                      value={pracMax}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'pracMax', Number(e.target.value))}
+                                      className="w-7 text-center font-mono text-[9px] border border-slate-200 rounded py-0.5 bg-emerald-50 text-emerald-700 focus:outline-none"
                                     />
                                   </div>
                                 </td>
 
                                 {/* Total Badge */}
-                                <td className="px-1.5 py-1 text-center border-r border-slate-300 bg-slate-50">
+                                <td className="px-1 py-1 text-center border-r border-slate-300 bg-slate-50">
                                   <span className={`font-mono font-black text-xs ${cellTotalObt > 0 ? 'text-slate-800' : 'text-slate-400'}`}>
                                     {cellTotalObt}
                                   </span>
@@ -2835,6 +4511,16 @@ export function ExamResults() {
                           if (matrixPattern === 'all-composite') {
                             return (
                               <React.Fragment key={`${st.id}-${sub}`}>
+                                <td className="px-1 py-1 text-center border-r border-slate-200 bg-amber-50/20">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max={testMax}
+                                    value={testObt}
+                                    onChange={e => handleMatrixChange(st.id, sub, 'testObt', Number(e.target.value))}
+                                    className="w-8 text-center font-mono font-bold text-xs border border-amber-300 rounded py-0.5 bg-white text-amber-900 focus:outline-none"
+                                  />
+                                </td>
                                 <td className="px-1 py-1 text-center border-r border-slate-200 bg-blue-50/20">
                                   <input
                                     type="number"
@@ -2842,27 +4528,37 @@ export function ExamResults() {
                                     max={writMax}
                                     value={writObt}
                                     onChange={e => handleMatrixChange(st.id, sub, 'obt', Number(e.target.value))}
-                                    className="w-9 text-center font-mono font-bold text-xs border border-blue-300 rounded py-0.5 bg-white text-slate-900 focus:outline-none"
+                                    className="w-8 text-center font-mono font-bold text-xs border border-blue-300 rounded py-0.5 bg-white text-slate-900 focus:outline-none"
                                   />
                                 </td>
                                 <td className="px-1 py-1 text-center border-r border-slate-200 bg-purple-50/20">
                                   <input
                                     type="number"
                                     min="0"
+                                    max={paper2Max}
+                                    value={paper2Obt}
+                                    onChange={e => handleMatrixChange(st.id, sub, 'paper2Obt', Number(e.target.value))}
+                                    className="w-8 text-center font-mono font-bold text-xs border border-purple-300 rounded py-0.5 bg-white text-purple-900 focus:outline-none"
+                                  />
+                                </td>
+                                <td className="px-1 py-1 text-center border-r border-slate-200 bg-teal-50/20">
+                                  <input
+                                    type="number"
+                                    min="0"
                                     max={oralMax}
                                     value={oralObt}
                                     onChange={e => handleMatrixChange(st.id, sub, 'oralObt', Number(e.target.value))}
-                                    className="w-9 text-center font-mono font-bold text-xs border border-purple-300 rounded py-0.5 bg-white text-purple-900 focus:outline-none"
+                                    className="w-8 text-center font-mono font-bold text-xs border border-teal-300 rounded py-0.5 bg-white text-teal-900 focus:outline-none"
                                   />
                                 </td>
-                                <td className="px-1 py-1 text-center border-r border-slate-200 bg-amber-50/20">
+                                <td className="px-1 py-1 text-center border-r border-slate-200 bg-emerald-50/20">
                                   <input
                                     type="number"
                                     min="0"
                                     max={pracMax}
                                     value={pracObt}
                                     onChange={e => handleMatrixChange(st.id, sub, 'pracObt', Number(e.target.value))}
-                                    className="w-9 text-center font-mono font-bold text-xs border border-amber-300 rounded py-0.5 bg-white text-amber-900 focus:outline-none"
+                                    className="w-8 text-center font-mono font-bold text-xs border border-emerald-300 rounded py-0.5 bg-white text-emerald-900 focus:outline-none"
                                   />
                                 </td>
                                 <td className="px-1 py-1 text-center border-r border-slate-300 bg-slate-50">
@@ -2974,7 +4670,1498 @@ export function ExamResults() {
       )}
 
       {/* ========================================================================= */}
-      {/* MODE 4: REPORT CARD ATTENDANCE LEDGER                                      */}
+      {/* MODE 4: SUBJECT-WISE ANNUAL COMPREHENSIVE LEDGER (TEST + HY + ANNUAL)     */}
+      {/* ========================================================================= */}
+      {activeMode === 'subject-annual-ledger' && (
+        <Card className="p-4 bg-white border border-slate-200 shadow-xs space-y-4">
+          {/* Quick Subject Switcher Tabs */}
+          <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 flex flex-wrap items-center gap-1.5">
+            <span className="text-xs font-black text-slate-700 mr-2 flex items-center gap-1">
+              <BookOpen className="w-3.5 h-3.5 text-teal-600" />
+              विषय चुनें:
+            </span>
+            {subjects.map(sb => {
+              const stat = subjectAnnualStats.find(s => isSameSubject(s.subject, sb));
+              const isDone = stat?.isComplete;
+              const isSelected = isSameSubject(subject, sb);
+              return (
+                <button
+                  key={sb}
+                  type="button"
+                  onClick={() => {
+                    setSubject(sb);
+                    setIsSubjectAnnualSaved(false);
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                    isSelected
+                      ? 'bg-teal-700 text-white shadow-sm ring-2 ring-teal-300'
+                      : isDone
+                      ? 'bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100'
+                      : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  <span>{sb}</span>
+                  {isDone ? (
+                    <CheckCircle className="w-3 h-3 text-emerald-500" />
+                  ) : (
+                    <span className="text-[10px] opacity-75 font-mono">
+                      ({stat?.filledStudents || 0}/{stat?.totalStudents || 0})
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* ⚡ 1-CLICK BULK & MANUAL MAX MARKS TOOLBAR ⚡ */}
+          <div className="bg-gradient-to-r from-teal-950 via-slate-900 to-teal-900 text-white p-4 rounded-xl shadow-xs space-y-3.5 border border-teal-800/60">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-teal-800/80 rounded-lg text-teal-200 border border-teal-600/50">
+                  <SlidersHorizontal className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-black uppercase tracking-wider text-teal-300 flex items-center gap-2">
+                    <span>1-क्लिक पूर्णांक व घटक नियंत्रक (Single-Click Max Marks & Pattern Setter)</span>
+                    <span className="bg-teal-500/30 text-teal-200 text-[10px] px-2 py-0.5 rounded font-mono font-bold">
+                      {selectedClass} • {subject}
+                    </span>
+                  </h4>
+                  <p className="text-[11px] text-slate-300">
+                    यहाँ से लिखित, मौखिक, प्रैक्टिकल और टेस्ट के पूर्णांक एक क्लिक में सभी छात्रों पर लागू करें।
+                  </p>
+                </div>
+              </div>
+
+              {/* Standard Presets */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[10px] font-bold text-slate-400 mr-1">मानक टेम्पलेट:</span>
+                <button
+                  type="button"
+                  onClick={() => handleApplyStandardBalancedPreset('standard')}
+                  className="px-2.5 py-1 text-[10.5px] font-bold bg-teal-800 hover:bg-teal-700 text-white rounded-md border border-teal-600 transition-all cursor-pointer"
+                  title="Test 10 + Written 70 + Oral 20 = 100"
+                >
+                  📝 सामान्य विषय (10+70+20=100)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyStandardBalancedPreset('practical')}
+                  className="px-2.5 py-1 text-[10.5px] font-bold bg-emerald-800 hover:bg-emerald-700 text-white rounded-md border border-emerald-600 transition-all cursor-pointer"
+                  title="Test 10 + Written 60 + Practical 30 = 100"
+                >
+                  🧪 प्रायोगिक विषय (10+60+30=100)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyStandardBalancedPreset('written-oral-only')}
+                  className="px-2.5 py-1 text-[10.5px] font-bold bg-indigo-800 hover:bg-indigo-700 text-white rounded-md border border-indigo-600 transition-all cursor-pointer"
+                  title="Written 80 + Oral 20 = 100"
+                >
+                  📑 लिखित 80 + मौखिक 20
+                </button>
+              </div>
+            </div>
+
+            {/* Component Quick Chips & Number Inputs */}
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 pt-1 border-t border-slate-700/60 text-xs">
+              {/* 1. Written / Theory Max */}
+              <div className="bg-slate-800/80 p-2.5 rounded-lg border border-slate-700 space-y-2">
+                <div className="flex items-center justify-between text-indigo-300 font-bold">
+                  <span className="flex items-center gap-1">📝 लिखित (Written / Theory) Max:</span>
+                  <span className="font-mono text-white text-xs font-black">{bulkAnnualWrittenMax}</span>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {[40, 50, 60, 70, 80, 90, 100].map(v => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => handleApplySubjectAnnualBulkMax('written', v)}
+                      className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                        bulkAnnualWrittenMax === v
+                          ? 'bg-indigo-500 text-white shadow-xs font-black'
+                          : 'bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-white'
+                      }`}
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-1.5 pt-1">
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={bulkAnnualWrittenMax}
+                    onChange={e => setBulkAnnualWrittenMax(Number(e.target.value))}
+                    className="w-16 text-center text-xs font-mono font-bold bg-slate-900 text-white rounded px-1.5 py-1 border border-indigo-500 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleApplySubjectAnnualBulkMax('written', bulkAnnualWrittenMax)}
+                    className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold py-1 px-2 rounded transition-all cursor-pointer"
+                  >
+                    Apply Written Max
+                  </button>
+                </div>
+              </div>
+
+              {/* 2. Oral / Viva Max */}
+              <div className="bg-slate-800/80 p-2.5 rounded-lg border border-slate-700 space-y-2">
+                <div className="flex items-center justify-between text-amber-300 font-bold">
+                  <span className="flex items-center gap-1">🗣️ मौखिक (Oral / Viva) Max:</span>
+                  <span className="font-mono text-white text-xs font-black">{bulkAnnualOralMax}</span>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {[10, 15, 20, 25, 30, 40].map(v => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => {
+                        setShowAnnualOralCols(true);
+                        handleApplySubjectAnnualBulkMax('oral', v);
+                      }}
+                      className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                        bulkAnnualOralMax === v && showAnnualOralCols
+                          ? 'bg-amber-500 text-slate-950 shadow-xs font-black'
+                          : 'bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-white'
+                      }`}
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-1.5 pt-1">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={bulkAnnualOralMax}
+                    onChange={e => setBulkAnnualOralMax(Number(e.target.value))}
+                    className="w-16 text-center text-xs font-mono font-bold bg-slate-900 text-white rounded px-1.5 py-1 border border-amber-500 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAnnualOralCols(true);
+                      handleApplySubjectAnnualBulkMax('oral', bulkAnnualOralMax);
+                    }}
+                    className="flex-1 bg-amber-600 hover:bg-amber-500 text-slate-950 text-[11px] font-black py-1 px-2 rounded transition-all cursor-pointer"
+                  >
+                    Apply Oral Max
+                  </button>
+                </div>
+              </div>
+
+              {/* 3. Practical Max */}
+              <div className="bg-slate-800/80 p-2.5 rounded-lg border border-slate-700 space-y-2">
+                <div className="flex items-center justify-between text-emerald-300 font-bold">
+                  <span className="flex items-center gap-1">🧪 प्रैक्टिकल (Practical) Max:</span>
+                  <span className="font-mono text-white text-xs font-black">{bulkAnnualPracMax}</span>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {[10, 15, 20, 25, 30, 40, 50].map(v => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => {
+                        setShowAnnualPracCols(true);
+                        handleApplySubjectAnnualBulkMax('prac', v);
+                      }}
+                      className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                        bulkAnnualPracMax === v && showAnnualPracCols
+                          ? 'bg-emerald-500 text-slate-950 shadow-xs font-black'
+                          : 'bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-white'
+                      }`}
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-1.5 pt-1">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={bulkAnnualPracMax}
+                    onChange={e => setBulkAnnualPracMax(Number(e.target.value))}
+                    className="w-16 text-center text-xs font-mono font-bold bg-slate-900 text-white rounded px-1.5 py-1 border border-emerald-500 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAnnualPracCols(true);
+                      handleApplySubjectAnnualBulkMax('prac', bulkAnnualPracMax);
+                    }}
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-slate-950 text-[11px] font-black py-1 px-2 rounded transition-all cursor-pointer"
+                  >
+                    Apply Practical Max
+                  </button>
+                </div>
+              </div>
+
+              {/* 4. Test Max */}
+              <div className="bg-slate-800/80 p-2.5 rounded-lg border border-slate-700 space-y-2">
+                <div className="flex items-center justify-between text-teal-300 font-bold">
+                  <span className="flex items-center gap-1">⏱️ टेस्ट (Test) Max:</span>
+                  <span className="font-mono text-white text-xs font-black">{bulkAnnualTestMax}</span>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {[10, 15, 20, 25, 30].map(v => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => {
+                        setShowAnnualTestCols(true);
+                        handleApplySubjectAnnualBulkMax('test', v);
+                      }}
+                      className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                        bulkAnnualTestMax === v && showAnnualTestCols
+                          ? 'bg-teal-400 text-teal-950 shadow-xs font-black'
+                          : 'bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-white'
+                      }`}
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-1.5 pt-1">
+                  <input
+                    type="number"
+                    min="0"
+                    max="50"
+                    value={bulkAnnualTestMax}
+                    onChange={e => setBulkAnnualTestMax(Number(e.target.value))}
+                    className="w-16 text-center text-xs font-mono font-bold bg-slate-900 text-white rounded px-1.5 py-1 border border-teal-400 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAnnualTestCols(true);
+                      handleApplySubjectAnnualBulkMax('test', bulkAnnualTestMax);
+                    }}
+                    className="flex-1 bg-teal-500 hover:bg-teal-400 text-teal-950 text-[11px] font-black py-1 px-2 rounded transition-all cursor-pointer"
+                  >
+                    Apply Test Max
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom notification & Draft Actions */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px] text-slate-300">
+              <div className="flex items-center gap-3">
+                {subjectAnnualAutoSaveNotice && (
+                  <span className="text-emerald-400 font-mono flex items-center gap-1">
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    {subjectAnnualAutoSaveNotice}
+                  </span>
+                )}
+                {isSubjectAnnualDraftSaved && (
+                  <span className="text-teal-300 font-bold bg-teal-900/60 px-2 py-0.5 rounded border border-teal-500">
+                    ड्राफ्ट स्थानीय रूप से सुरक्षित हो गया!
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSaveSubjectAnnualDraft}
+                  className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1 rounded text-xs font-bold border border-slate-600 transition-all flex items-center gap-1 cursor-pointer"
+                  title="Save draft locally (सुरक्षित ड्राफ्ट)"
+                >
+                  <Save className="w-3.5 h-3.5 text-teal-400" />
+                  <span>ड्राफ्ट सेव करें (Save Draft)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClearSubjectAnnualMarks}
+                  className="bg-rose-950 hover:bg-rose-900 text-rose-300 px-3 py-1 rounded text-xs font-bold border border-rose-800 transition-all flex items-center gap-1 cursor-pointer"
+                  title="Reset all entered marks for this subject"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>अंक रीसेट (Reset)</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Draft Recovery Banner */}
+          {subjectAnnualDraftInfo && (
+            <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 text-amber-900">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
+                <div>
+                  <p className="text-xs font-bold">
+                    ⚠️ {subjectAnnualDraftInfo.timestamp} का अहस्तांतरित ड्राफ्ट (Unsaved Draft) उपलब्ध है ({selectedClass} - {subject})!
+                  </p>
+                  <p className="text-[11px] text-amber-700">
+                    सिस्टम बंद होने से पहले का डेटा सुरक्षित है। क्या आप इसे लोड करना चाहते हैं?
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleRestoreSubjectAnnualDraft}
+                  className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-xs transition-all cursor-pointer"
+                >
+                  ड्राफ्ट पुनः लोड करें (Restore Draft)
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDiscardSubjectAnnualDraft}
+                  className="bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold px-3 py-1.5 rounded-lg transition-all cursor-pointer"
+                >
+                  हटाएं (Discard)
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* COMPREHENSIVE DATA TABLE */}
+          <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-2xs">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                {/* Level 1 Super Headers */}
+                <tr className="border-b border-slate-300 text-xs font-black uppercase tracking-wider text-center">
+                  <th colSpan={4} className="bg-slate-100 text-slate-700 py-2.5 px-3 border-r border-slate-300 text-left sticky left-0 z-20">
+                    छात्र विवरण (STUDENT INFO)
+                  </th>
+                  <th
+                    colSpan={(showAnnualTestCols ? 1 : 0) + 1 + (showAnnualOralCols ? 1 : 0) + (showAnnualPracCols ? 1 : 0) + 1}
+                    className="bg-blue-900 text-white py-2.5 px-3 border-r border-blue-950 font-bold"
+                  >
+                    अर्धवार्षिक सत्र (HALF-YEARLY - 100 MARKS)
+                  </th>
+                  <th
+                    colSpan={(showAnnualTestCols ? 1 : 0) + 1 + (showAnnualOralCols ? 1 : 0) + (showAnnualPracCols ? 1 : 0) + 1}
+                    className="bg-purple-900 text-white py-2.5 px-3 border-r border-purple-950 font-bold"
+                  >
+                    वार्षिक सत्र (ANNUAL / YEARLY - 100 MARKS)
+                  </th>
+                  <th colSpan={3} className="bg-slate-900 text-white py-2.5 px-3 font-bold">
+                    वार्षिक महायोग (GRAND TOTAL & GRADE)
+                  </th>
+                </tr>
+
+                {/* Level 2 Column Headers */}
+                <tr className="bg-slate-50 text-[11px] font-bold text-slate-700 border-b border-slate-300 uppercase">
+                  {/* Student sticky columns */}
+                  <th className="py-2 px-2.5 w-12 text-center border-r border-slate-200 sticky left-0 bg-slate-50 z-20">Roll</th>
+                  <th className="py-2 px-3 min-w-[150px] border-r border-slate-200 sticky left-12 bg-slate-50 z-20">Student Name</th>
+                  <th className="py-2 px-3 min-w-[130px] border-r border-slate-200 text-slate-500">Father Name</th>
+                  <th className="py-2 px-2.5 w-16 text-center border-r-2 border-slate-300 text-slate-400 font-mono">SR No</th>
+
+                  {/* Half-Yearly Sub Columns */}
+                  {showAnnualTestCols && (
+                    <th className="py-2 px-2 text-center min-w-[90px] bg-blue-50/70 border-r border-blue-200 text-blue-950">
+                      HY Test
+                    </th>
+                  )}
+                  <th className="py-2 px-2 text-center min-w-[95px] bg-blue-50/70 border-r border-blue-200 text-blue-950">
+                    HY लिखित (Writ)
+                  </th>
+                  {showAnnualOralCols && (
+                    <th className="py-2 px-2 text-center min-w-[90px] bg-amber-50/70 border-r border-amber-200 text-amber-950">
+                      HY मौखिक (Oral)
+                    </th>
+                  )}
+                  {showAnnualPracCols && (
+                    <th className="py-2 px-2 text-center min-w-[90px] bg-emerald-50/70 border-r border-emerald-200 text-emerald-950">
+                      HY प्रैक्टिकल (Prac)
+                    </th>
+                  )}
+                  <th className="py-2 px-2.5 text-center min-w-[85px] bg-blue-100/80 border-r-2 border-slate-300 text-blue-950 font-black">
+                    HY कुल (100)
+                  </th>
+
+                  {/* Annual Sub Columns */}
+                  {showAnnualTestCols && (
+                    <th className="py-2 px-2 text-center min-w-[90px] bg-purple-50/70 border-r border-purple-200 text-purple-950">
+                      Yearly Test
+                    </th>
+                  )}
+                  <th className="py-2 px-2 text-center min-w-[95px] bg-purple-50/70 border-r border-purple-200 text-purple-950">
+                    Yearly लिखित (Writ)
+                  </th>
+                  {showAnnualOralCols && (
+                    <th className="py-2 px-2 text-center min-w-[90px] bg-amber-50/70 border-r border-amber-200 text-amber-950">
+                      Yearly मौखिक (Oral)
+                    </th>
+                  )}
+                  {showAnnualPracCols && (
+                    <th className="py-2 px-2 text-center min-w-[90px] bg-emerald-50/70 border-r border-emerald-200 text-emerald-950">
+                      Yearly प्रैक्टिकल (Prac)
+                    </th>
+                  )}
+                  <th className="py-2 px-2.5 text-center min-w-[85px] bg-purple-100/80 border-r-2 border-slate-300 text-purple-950 font-black">
+                    वार्षिक कुल (100)
+                  </th>
+
+                  {/* Grand Total & Grade */}
+                  <th className="py-2 px-2.5 text-center min-w-[90px] bg-slate-100 border-r border-slate-200 text-slate-900 font-black">
+                    Grand Total
+                  </th>
+                  <th className="py-2 px-2 text-center min-w-[65px] bg-slate-100 border-r border-slate-200 text-slate-900 font-black">
+                    %
+                  </th>
+                  <th className="py-2 px-2.5 text-center min-w-[70px] bg-slate-100 text-slate-900 font-black">
+                    Grade
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-slate-200">
+                {classStudents.length === 0 ? (
+                  <tr>
+                    <td colSpan={18} className="text-center py-12 text-slate-400 italic">
+                      {selectedClass} में कोई छात्र नहीं मिला।
+                    </td>
+                  </tr>
+                ) : filteredStudents.length === 0 ? (
+                  <tr>
+                    <td colSpan={18} className="text-center py-10 text-slate-400 italic">
+                      खोज परिणाम में कोई छात्र नहीं मिला।
+                    </td>
+                  </tr>
+                ) : (
+                  filteredStudents.map((st, idx) => {
+                    const row: SubjectAnnualRowMarks = subjectAnnualMarks[st.id] || {
+                      hyTestObt: 0, hyTestMax: 10,
+                      hyWrittenObt: 0, hyWrittenMax: 70,
+                      hyOralObt: 0, hyOralMax: 20,
+                      hyPracObt: 0, hyPracMax: 0,
+                      yTestObt: 0, yTestMax: 10,
+                      yWrittenObt: 0, yWrittenMax: 70,
+                      yOralObt: 0, yOralMax: 20,
+                      yPracObt: 0, yPracMax: 0,
+                    };
+
+                    // Calculations
+                    const hyObtTotal = 
+                      (showAnnualTestCols ? Number(row.hyTestObt || 0) : 0) +
+                      Number(row.hyWrittenObt || 0) +
+                      (showAnnualOralCols ? Number(row.hyOralObt || 0) : 0) +
+                      (showAnnualPracCols ? Number(row.hyPracObt || 0) : 0);
+
+                    const hyMaxTotal = 
+                      (showAnnualTestCols ? Number(row.hyTestMax || 0) : 0) +
+                      Number(row.hyWrittenMax || 0) +
+                      (showAnnualOralCols ? Number(row.hyOralMax || 0) : 0) +
+                      (showAnnualPracCols ? Number(row.hyPracMax || 0) : 0);
+
+                    const yObtTotal = 
+                      (showAnnualTestCols ? Number(row.yTestObt || 0) : 0) +
+                      Number(row.yWrittenObt || 0) +
+                      (showAnnualOralCols ? Number(row.yOralObt || 0) : 0) +
+                      (showAnnualPracCols ? Number(row.yPracObt || 0) : 0);
+
+                    const yMaxTotal = 
+                      (showAnnualTestCols ? Number(row.yTestMax || 0) : 0) +
+                      Number(row.yWrittenMax || 0) +
+                      (showAnnualOralCols ? Number(row.yOralMax || 0) : 0) +
+                      (showAnnualPracCols ? Number(row.yPracMax || 0) : 0);
+
+                    const grandObt = hyObtTotal + yObtTotal;
+                    const grandMax = hyMaxTotal + yMaxTotal;
+                    const pct = grandMax > 0 ? (grandObt / grandMax) * 100 : 0;
+                    const gradeInfo = getGradeFromPercentage(pct);
+
+                    return (
+                      <tr key={st.id} className="hover:bg-teal-50/20 transition-colors group">
+                        {/* 1. Roll No */}
+                        <td className="py-2 px-2.5 text-center font-mono font-bold text-slate-700 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-teal-50/30 z-10">
+                          {st.rollNo || idx + 1}
+                        </td>
+
+                        {/* 2. Student Name */}
+                        <td className="py-2 px-3 font-black text-slate-800 border-r border-slate-200 sticky left-12 bg-white group-hover:bg-teal-50/30 z-10">
+                          <div className="flex flex-col">
+                            <span>{st.name}</span>
+                            <span className="text-[10px] text-slate-400 font-normal md:hidden">
+                              {st.fatherName ? `S/o ${st.fatherName}` : ''}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* 3. Father Name */}
+                        <td className="py-2 px-3 text-slate-600 border-r border-slate-200">
+                          {st.fatherName || '-'}
+                        </td>
+
+                        {/* 4. SR No */}
+                        <td className="py-2 px-2.5 text-center font-mono text-[10.5px] text-slate-400 border-r-2 border-slate-300">
+                          {st.srNo || st.admissionNo || '-'}
+                        </td>
+
+                        {/* HALF-YEARLY COLUMNS */}
+                        {showAnnualTestCols && (
+                          <td className="py-1 px-1.5 text-center bg-blue-50/30 border-r border-blue-200">
+                            <div className="flex items-center justify-center gap-1">
+                              <input
+                                type="number"
+                                min="0"
+                                max={row.hyTestMax}
+                                value={row.hyTestObt || ''}
+                                placeholder="0"
+                                onChange={e => handleSubjectAnnualCellChange(st.id, 'hyTestObt', Number(e.target.value))}
+                                className="w-11 text-center text-xs font-mono font-bold border border-blue-300 rounded p-1 bg-white focus:bg-blue-50 focus:ring-1 focus:ring-blue-500 shadow-2xs"
+                              />
+                              <span className="text-slate-400 text-[10px]">/</span>
+                              <input
+                                type="number"
+                                min="1"
+                                max="100"
+                                value={row.hyTestMax || 10}
+                                onChange={e => handleSubjectAnnualCellChange(st.id, 'hyTestMax', Number(e.target.value))}
+                                className="w-9 text-center text-[10.5px] font-mono text-slate-500 border border-slate-200 rounded p-1 bg-slate-50 focus:bg-white"
+                                title="Max Marks"
+                              />
+                            </div>
+                          </td>
+                        )}
+
+                        {/* HY Written */}
+                        <td className="py-1 px-1.5 text-center bg-blue-50/30 border-r border-blue-200">
+                          <div className="flex items-center justify-center gap-1">
+                            <input
+                              type="number"
+                              min="0"
+                              max={row.hyWrittenMax}
+                              value={row.hyWrittenObt || ''}
+                              placeholder="0"
+                              onChange={e => handleSubjectAnnualCellChange(st.id, 'hyWrittenObt', Number(e.target.value))}
+                              className="w-12 text-center text-xs font-mono font-black text-blue-900 border border-blue-400 rounded p-1 bg-white focus:bg-blue-50 focus:ring-1 focus:ring-blue-500 shadow-2xs"
+                            />
+                            <span className="text-slate-400 text-[10px]">/</span>
+                            <input
+                              type="number"
+                              min="1"
+                              max="100"
+                              value={row.hyWrittenMax || 70}
+                              onChange={e => handleSubjectAnnualCellChange(st.id, 'hyWrittenMax', Number(e.target.value))}
+                              className="w-9 text-center text-[10.5px] font-mono text-slate-500 border border-slate-200 rounded p-1 bg-slate-50 focus:bg-white"
+                              title="Written Max Marks"
+                            />
+                          </div>
+                        </td>
+
+                        {/* HY Oral */}
+                        {showAnnualOralCols && (
+                          <td className="py-1 px-1.5 text-center bg-amber-50/30 border-r border-amber-200">
+                            <div className="flex items-center justify-center gap-1">
+                              <input
+                                type="number"
+                                min="0"
+                                max={row.hyOralMax}
+                                value={row.hyOralObt || ''}
+                                placeholder="0"
+                                onChange={e => handleSubjectAnnualCellChange(st.id, 'hyOralObt', Number(e.target.value))}
+                                className="w-11 text-center text-xs font-mono font-bold text-amber-900 border border-amber-300 rounded p-1 bg-white focus:bg-amber-50 focus:ring-1 focus:ring-amber-500 shadow-2xs"
+                              />
+                              <span className="text-slate-400 text-[10px]">/</span>
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={row.hyOralMax || 20}
+                                onChange={e => handleSubjectAnnualCellChange(st.id, 'hyOralMax', Number(e.target.value))}
+                                className="w-9 text-center text-[10.5px] font-mono text-slate-500 border border-slate-200 rounded p-1 bg-slate-50 focus:bg-white"
+                                title="Oral Max Marks"
+                              />
+                            </div>
+                          </td>
+                        )}
+
+                        {/* HY Practical */}
+                        {showAnnualPracCols && (
+                          <td className="py-1 px-1.5 text-center bg-emerald-50/30 border-r border-emerald-200">
+                            <div className="flex items-center justify-center gap-1">
+                              <input
+                                type="number"
+                                min="0"
+                                max={row.hyPracMax}
+                                value={row.hyPracObt || ''}
+                                placeholder="0"
+                                onChange={e => handleSubjectAnnualCellChange(st.id, 'hyPracObt', Number(e.target.value))}
+                                className="w-11 text-center text-xs font-mono font-bold text-emerald-900 border border-emerald-300 rounded p-1 bg-white focus:bg-emerald-50 focus:ring-1 focus:ring-emerald-500 shadow-2xs"
+                              />
+                              <span className="text-slate-400 text-[10px]">/</span>
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={row.hyPracMax || 0}
+                                onChange={e => handleSubjectAnnualCellChange(st.id, 'hyPracMax', Number(e.target.value))}
+                                className="w-9 text-center text-[10.5px] font-mono text-slate-500 border border-slate-200 rounded p-1 bg-slate-50 focus:bg-white"
+                                title="Practical Max Marks"
+                              />
+                            </div>
+                          </td>
+                        )}
+
+                        {/* HY Total */}
+                        <td className="py-1 px-2.5 text-center bg-blue-100/50 border-r-2 border-slate-300 font-mono font-black text-blue-950">
+                          <span>{hyObtTotal}</span>
+                          <span className="text-[10px] text-blue-600 font-normal"> / {hyMaxTotal}</span>
+                        </td>
+
+                        {/* ANNUAL / YEARLY COLUMNS */}
+                        {showAnnualTestCols && (
+                          <td className="py-1 px-1.5 text-center bg-purple-50/30 border-r border-purple-200">
+                            <div className="flex items-center justify-center gap-1">
+                              <input
+                                type="number"
+                                min="0"
+                                max={row.yTestMax}
+                                value={row.yTestObt || ''}
+                                placeholder="0"
+                                onChange={e => handleSubjectAnnualCellChange(st.id, 'yTestObt', Number(e.target.value))}
+                                className="w-11 text-center text-xs font-mono font-bold border border-purple-300 rounded p-1 bg-white focus:bg-purple-50 focus:ring-1 focus:ring-purple-500 shadow-2xs"
+                              />
+                              <span className="text-slate-400 text-[10px]">/</span>
+                              <input
+                                type="number"
+                                min="1"
+                                max="100"
+                                value={row.yTestMax || 10}
+                                onChange={e => handleSubjectAnnualCellChange(st.id, 'yTestMax', Number(e.target.value))}
+                                className="w-9 text-center text-[10.5px] font-mono text-slate-500 border border-slate-200 rounded p-1 bg-slate-50 focus:bg-white"
+                                title="Yearly Test Max Marks"
+                              />
+                            </div>
+                          </td>
+                        )}
+
+                        {/* Yearly Written */}
+                        <td className="py-1 px-1.5 text-center bg-purple-50/30 border-r border-purple-200">
+                          <div className="flex items-center justify-center gap-1">
+                            <input
+                              type="number"
+                              min="0"
+                              max={row.yWrittenMax}
+                              value={row.yWrittenObt || ''}
+                              placeholder="0"
+                              onChange={e => handleSubjectAnnualCellChange(st.id, 'yWrittenObt', Number(e.target.value))}
+                              className="w-12 text-center text-xs font-mono font-black text-purple-900 border border-purple-400 rounded p-1 bg-white focus:bg-purple-50 focus:ring-1 focus:ring-purple-500 shadow-2xs"
+                            />
+                            <span className="text-slate-400 text-[10px]">/</span>
+                            <input
+                              type="number"
+                              min="1"
+                              max="100"
+                              value={row.yWrittenMax || 70}
+                              onChange={e => handleSubjectAnnualCellChange(st.id, 'yWrittenMax', Number(e.target.value))}
+                              className="w-9 text-center text-[10.5px] font-mono text-slate-500 border border-slate-200 rounded p-1 bg-slate-50 focus:bg-white"
+                              title="Yearly Written Max Marks"
+                            />
+                          </div>
+                        </td>
+
+                        {/* Yearly Oral */}
+                        {showAnnualOralCols && (
+                          <td className="py-1 px-1.5 text-center bg-amber-50/30 border-r border-amber-200">
+                            <div className="flex items-center justify-center gap-1">
+                              <input
+                                type="number"
+                                min="0"
+                                max={row.yOralMax}
+                                value={row.yOralObt || ''}
+                                placeholder="0"
+                                onChange={e => handleSubjectAnnualCellChange(st.id, 'yOralObt', Number(e.target.value))}
+                                className="w-11 text-center text-xs font-mono font-bold text-amber-900 border border-amber-300 rounded p-1 bg-white focus:bg-amber-50 focus:ring-1 focus:ring-amber-500 shadow-2xs"
+                              />
+                              <span className="text-slate-400 text-[10px]">/</span>
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={row.yOralMax || 20}
+                                onChange={e => handleSubjectAnnualCellChange(st.id, 'yOralMax', Number(e.target.value))}
+                                className="w-9 text-center text-[10.5px] font-mono text-slate-500 border border-slate-200 rounded p-1 bg-slate-50 focus:bg-white"
+                                title="Yearly Oral Max Marks"
+                              />
+                            </div>
+                          </td>
+                        )}
+
+                        {/* Yearly Practical */}
+                        {showAnnualPracCols && (
+                          <td className="py-1 px-1.5 text-center bg-emerald-50/30 border-r border-emerald-200">
+                            <div className="flex items-center justify-center gap-1">
+                              <input
+                                type="number"
+                                min="0"
+                                max={row.yPracMax}
+                                value={row.yPracObt || ''}
+                                placeholder="0"
+                                onChange={e => handleSubjectAnnualCellChange(st.id, 'yPracObt', Number(e.target.value))}
+                                className="w-11 text-center text-xs font-mono font-bold text-emerald-900 border border-emerald-300 rounded p-1 bg-white focus:bg-emerald-50 focus:ring-1 focus:ring-emerald-500 shadow-2xs"
+                              />
+                              <span className="text-slate-400 text-[10px]">/</span>
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={row.yPracMax || 0}
+                                onChange={e => handleSubjectAnnualCellChange(st.id, 'yPracMax', Number(e.target.value))}
+                                className="w-9 text-center text-[10.5px] font-mono text-slate-500 border border-slate-200 rounded p-1 bg-slate-50 focus:bg-white"
+                                title="Yearly Practical Max Marks"
+                              />
+                            </div>
+                          </td>
+                        )}
+
+                        {/* Yearly Total */}
+                        <td className="py-1 px-2.5 text-center bg-purple-100/50 border-r-2 border-slate-300 font-mono font-black text-purple-950">
+                          <span>{yObtTotal}</span>
+                          <span className="text-[10px] text-purple-600 font-normal"> / {yMaxTotal}</span>
+                        </td>
+
+                        {/* GRAND TOTAL */}
+                        <td className="py-1 px-2.5 text-center bg-slate-50 font-mono font-black text-slate-900 border-r border-slate-200">
+                          <span>{grandObt}</span>
+                          <span className="text-[10px] text-slate-400 font-normal"> / {grandMax}</span>
+                        </td>
+
+                        {/* PERCENTAGE */}
+                        <td className="py-1 px-2 text-center font-mono font-bold text-slate-800 border-r border-slate-200">
+                          {pct.toFixed(1)}%
+                        </td>
+
+                        {/* GRADE */}
+                        <td className="py-1 px-2 text-center">
+                          <span className={`text-[10.5px] font-black px-2 py-0.5 rounded-md border ${gradeInfo.bg} ${gradeInfo.text}`}>
+                            {gradeInfo.label}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* FOOTER ACTIONS & SAVE BUTTON */}
+          <div className="pt-3 border-t border-slate-200 flex flex-wrap items-center justify-between gap-4 bg-slate-50/60 p-3 rounded-xl">
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-slate-600 font-semibold">
+                कुल छात्र: <strong>{classStudents.length}</strong> | पूर्ण अंक भरे: <strong>
+                  {classStudents.filter(st => {
+                    const r = subjectAnnualMarks[st.id];
+                    return r && (r.hyWrittenObt > 0 || r.yWrittenObt > 0);
+                  }).length}
+                </strong>
+              </span>
+
+              {isSubjectAnnualSaved && (
+                <span className="text-xs text-emerald-800 font-black flex items-center gap-1.5 bg-emerald-100 border border-emerald-300 px-3 py-1.5 rounded-lg shadow-xs">
+                  <CheckCircle className="w-4 h-4 text-emerald-600" />
+                  <span>{subject} ({selectedClass}) के सभी वार्षिक अंक सफलतापूर्वक डेटाबेस में सुरक्षित हो गए!</span>
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleSaveSubjectAnnualDraft}
+                className="text-xs font-bold px-4 py-2 border-slate-300 text-slate-700 hover:bg-slate-100 cursor-pointer"
+              >
+                <Save className="w-3.5 h-3.5 mr-1 text-teal-600" />
+                ड्राफ्ट सेव करें
+              </Button>
+
+              <Button
+                type="button"
+                onClick={handleSaveSubjectAnnualMarks}
+                disabled={isSubjectAnnualSaving || classStudents.length === 0}
+                className="bg-teal-700 hover:bg-teal-800 text-white text-xs font-black px-8 py-2.5 rounded-lg shadow-md flex items-center gap-2 transition-all cursor-pointer"
+              >
+                <Save className="w-4 h-4" />
+                <span>
+                  {isSubjectAnnualSaving
+                    ? 'सुरक्षित हो रहा है...'
+                    : `Save All Annual Marks for ${subject} (${selectedClass})`}
+                </span>
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODE 5: PRE-PRIMARY & JUNIOR (NURSERY, L.K.G, U.K.G) GRADING HUB          */}
+      {/* (NO PRACTICALS - ONLY TEST + WRITTEN + ORAL / FULLY CUSTOM MAX MARKS)     */}
+      {/* ========================================================================= */}
+      {activeMode === 'pre-primary-junior' && (
+        <Card className="p-4 bg-white border border-pink-200 shadow-xs space-y-4">
+          {/* 1. Header Banner */}
+          <div className="bg-gradient-to-r from-pink-900 via-rose-950 to-purple-950 text-white p-4 rounded-xl shadow-xs border border-pink-700/60">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-pink-600 rounded-xl text-white shadow-inner flex items-center justify-center text-xl">
+                  🎒
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-black tracking-wide text-pink-50 flex items-center gap-2">
+                      <span>नर्सरी / L.K.G / U.K.G एवं प्राथमिक परीक्षा अंक प्रविष्टि (Pre-Primary Grading Hub)</span>
+                    </h3>
+                    <span className="bg-amber-400 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded-full uppercase shadow-xs">
+                      No Practical • Zero Clutter
+                    </span>
+                  </div>
+                  <p className="text-xs text-pink-200 mt-1 max-w-2xl">
+                    छोटे बच्चों की कक्षाओं (Nursery, L.K.G, U.K.G) में प्रैक्टिकल परीक्षा नहीं होती है। यहाँ आप <strong>टेस्ट (Test)</strong>, <strong>लिखित (Written)</strong> और <strong>मौखिक (Oral)</strong> के प्राप्तांक व पूर्णांक (Max Marks) अपनी इच्छानुसार भर सकते हैं।
+                  </p>
+                </div>
+              </div>
+
+              {/* Quick Pre-Primary Class Pills */}
+              <div className="flex flex-wrap items-center gap-1.5 bg-pink-950/80 p-2 rounded-xl border border-pink-800">
+                <span className="text-[11px] font-bold text-pink-300 mr-1">कक्षा चुनें:</span>
+                {['Nursery', 'L.K.G', 'U.K.G', 'Class 1', 'Class 2', 'Class 3'].map(cl => {
+                  const isSel = isSameGrade(selectedClass, cl);
+                  return (
+                    <button
+                      key={cl}
+                      type="button"
+                      onClick={() => {
+                        setSelectedClass(cl);
+                        setIsSubjectAnnualSaved(false);
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        isSel
+                          ? 'bg-amber-400 text-slate-950 font-black shadow-sm ring-2 ring-amber-200'
+                          : 'bg-pink-900/90 text-pink-100 hover:bg-pink-800'
+                      }`}
+                    >
+                      {cl === 'Nursery' ? '👶 Nursery' : cl === 'L.K.G' ? '🧸 L.K.G' : cl === 'U.K.G' ? '🎨 U.K.G' : cl}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* 2. Quick Subject Selector Bar */}
+          <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 flex flex-wrap items-center gap-1.5">
+            <span className="text-xs font-black text-slate-700 mr-2 flex items-center gap-1">
+              <BookOpen className="w-3.5 h-3.5 text-pink-600" />
+              विषय चुनें (Subject):
+            </span>
+            {subjects.map(sb => {
+              const stat = subjectAnnualStats.find(s => isSameSubject(s.subject, sb));
+              const isDone = stat?.isComplete;
+              const isSelected = isSameSubject(subject, sb);
+              return (
+                <button
+                  key={sb}
+                  type="button"
+                  onClick={() => {
+                    setSubject(sb);
+                    setIsSubjectAnnualSaved(false);
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                    isSelected
+                      ? 'bg-pink-600 text-white shadow-sm ring-2 ring-pink-300'
+                      : isDone
+                      ? 'bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100'
+                      : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  <span>{sb}</span>
+                  {isDone ? (
+                    <CheckCircle className="w-3 h-3 text-emerald-500" />
+                  ) : (
+                    <span className="text-[10px] opacity-75 font-mono">
+                      ({stat?.filledStudents || 0}/{stat?.totalStudents || 0})
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* 3. Manual Max Marks Customizer & Preset Hub */}
+          <div className="bg-gradient-to-r from-slate-900 via-pink-950 to-slate-900 text-white p-3.5 rounded-xl shadow-xs border border-pink-800/40 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-pink-900/60 pb-2.5">
+              <div className="flex items-center gap-2">
+                <Sliders className="w-4 h-4 text-pink-400" />
+                <h4 className="text-xs font-black uppercase tracking-wide text-pink-200">
+                  पूर्णांक सेटिंग हब (School Custom Max Marks Controller)
+                </h4>
+                <span className="bg-pink-500/30 text-pink-200 text-[10px] px-2 py-0.5 rounded border border-pink-400/30 font-bold">
+                  {selectedClass} • {subject}
+                </span>
+              </div>
+
+              {/* Live Scheme Calculation Pill */}
+              <div className="bg-pink-950/90 px-3 py-1 rounded-lg border border-pink-700/60 text-xs font-mono font-bold text-amber-300 flex items-center gap-2">
+                <span>📐 योजना:</span>
+                <span>
+                  {showAnnualTestCols ? bulkAnnualTestMax : 0} (Test) + {bulkAnnualWrittenMax} (Written) + {showAnnualOralCols ? bulkAnnualOralMax : 0} (Oral) = <strong>{(showAnnualTestCols ? bulkAnnualTestMax : 0) + bulkAnnualWrittenMax + (showAnnualOralCols ? bulkAnnualOralMax : 0)} प्रति सत्र</strong>
+                </span>
+                <span className="text-slate-400">|</span>
+                <span className="text-emerald-300">
+                  वार्षिक कुल: {((showAnnualTestCols ? bulkAnnualTestMax : 0) + bulkAnnualWrittenMax + (showAnnualOralCols ? bulkAnnualOralMax : 0)) * 2}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              {/* Manual Number Inputs */}
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Test Max Input */}
+                <div className="flex items-center gap-2 bg-slate-800/90 p-1.5 px-2.5 rounded-lg border border-slate-700">
+                  <span className="text-[11px] font-bold text-pink-200">📝 Test Max:</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={bulkAnnualTestMax}
+                    onChange={e => handleApplySubjectAnnualBulkMax('test', Number(e.target.value))}
+                    className="w-12 text-center text-xs font-mono font-bold bg-white text-slate-900 rounded py-1 border border-pink-400 focus:outline-none"
+                  />
+                  <div className="flex items-center gap-1">
+                    {[0, 10, 15, 20].map(v => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => {
+                          if (v === 0) {
+                            setShowAnnualTestCols(false);
+                            handleApplySubjectAnnualBulkMax('test', 0);
+                          } else {
+                            setShowAnnualTestCols(true);
+                            handleApplySubjectAnnualBulkMax('test', v);
+                          }
+                        }}
+                        className={`px-1.5 py-0.5 text-[9.5px] font-bold rounded transition-all cursor-pointer ${
+                          bulkAnnualTestMax === v
+                            ? 'bg-amber-400 text-slate-950 font-black'
+                            : 'bg-slate-700 hover:bg-slate-600 text-slate-200'
+                        }`}
+                      >
+                        {v === 0 ? 'No Test' : v}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Written Max Input */}
+                <div className="flex items-center gap-2 bg-slate-800/90 p-1.5 px-2.5 rounded-lg border border-slate-700">
+                  <span className="text-[11px] font-bold text-blue-200">✍️ Written Max:</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="200"
+                    value={bulkAnnualWrittenMax}
+                    onChange={e => handleApplySubjectAnnualBulkMax('written', Number(e.target.value))}
+                    className="w-12 text-center text-xs font-mono font-bold bg-white text-slate-900 rounded py-1 border border-blue-400 focus:outline-none"
+                  />
+                  <div className="flex items-center gap-1">
+                    {[40, 50, 60, 70, 80, 100].map(v => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => handleApplySubjectAnnualBulkMax('written', v)}
+                        className={`px-1.5 py-0.5 text-[9.5px] font-bold rounded transition-all cursor-pointer ${
+                          bulkAnnualWrittenMax === v
+                            ? 'bg-amber-400 text-slate-950 font-black'
+                            : 'bg-slate-700 hover:bg-slate-600 text-slate-200'
+                        }`}
+                      >
+                        {v}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Oral Max Input */}
+                <div className="flex items-center gap-2 bg-slate-800/90 p-1.5 px-2.5 rounded-lg border border-slate-700">
+                  <span className="text-[11px] font-bold text-amber-200">🗣️ Oral / मौखिक Max:</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={bulkAnnualOralMax}
+                    onChange={e => handleApplySubjectAnnualBulkMax('oral', Number(e.target.value))}
+                    className="w-12 text-center text-xs font-mono font-bold bg-white text-slate-900 rounded py-1 border border-amber-400 focus:outline-none"
+                  />
+                  <div className="flex items-center gap-1">
+                    {[10, 20, 30, 40, 50].map(v => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => {
+                          setShowAnnualOralCols(true);
+                          handleApplySubjectAnnualBulkMax('oral', v);
+                        }}
+                        className={`px-1.5 py-0.5 text-[9.5px] font-bold rounded transition-all cursor-pointer ${
+                          bulkAnnualOralMax === v
+                            ? 'bg-amber-400 text-slate-950 font-black'
+                            : 'bg-slate-700 hover:bg-slate-600 text-slate-200'
+                        }`}
+                      >
+                        {v}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Sync toggle & Presets */}
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="flex items-center gap-1.5 text-xs text-slate-200 font-semibold cursor-pointer bg-slate-800/80 px-2.5 py-1.5 rounded-lg border border-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={syncHyAnnualMax}
+                    onChange={e => setSyncHyAnnualMax(e.target.checked)}
+                    className="w-3.5 h-3.5 text-pink-600 rounded"
+                  />
+                  <span>Sync HY & Yearly</span>
+                </label>
+
+                {/* Quick Presets */}
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAnnualTestCols(true);
+                      setShowAnnualOralCols(true);
+                      setShowAnnualPracCols(false);
+                      handleApplySubjectAnnualBulkMax('test', 10);
+                      handleApplySubjectAnnualBulkMax('written', 70);
+                      handleApplySubjectAnnualBulkMax('oral', 20);
+                    }}
+                    className="px-2 py-1 text-[10.5px] font-bold rounded bg-pink-800 hover:bg-pink-700 text-pink-100 border border-pink-600 transition-all cursor-pointer"
+                    title="10 Test + 70 Written + 20 Oral = 100"
+                  >
+                    10T + 70W + 20O
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAnnualTestCols(true);
+                      setShowAnnualOralCols(true);
+                      setShowAnnualPracCols(false);
+                      handleApplySubjectAnnualBulkMax('test', 10);
+                      handleApplySubjectAnnualBulkMax('written', 50);
+                      handleApplySubjectAnnualBulkMax('oral', 40);
+                    }}
+                    className="px-2 py-1 text-[10.5px] font-bold rounded bg-purple-800 hover:bg-purple-700 text-purple-100 border border-purple-600 transition-all cursor-pointer"
+                    title="10 Test + 50 Written + 40 Oral = 100 (Primary/Nursery Scheme)"
+                  >
+                    10T + 50W + 40O
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAnnualTestCols(false);
+                      setShowAnnualOralCols(true);
+                      setShowAnnualPracCols(false);
+                      handleApplySubjectAnnualBulkMax('test', 0);
+                      handleApplySubjectAnnualBulkMax('written', 50);
+                      handleApplySubjectAnnualBulkMax('oral', 50);
+                    }}
+                    className="px-2 py-1 text-[10.5px] font-bold rounded bg-amber-800 hover:bg-amber-700 text-amber-100 border border-amber-600 transition-all cursor-pointer"
+                    title="50 Written + 50 Oral = 100 (50-50 Scheme)"
+                  >
+                    50W + 50O (No Test)
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 4. Student Marks Entry Table */}
+          <div className="overflow-x-auto border border-slate-300 rounded-xl shadow-xs max-h-[600px] overflow-y-auto">
+            <table className="w-full text-left text-xs border-collapse bg-white">
+              <thead className="bg-slate-900 text-white font-bold sticky top-0 z-20 shadow-xs">
+                <tr>
+                  <th rowSpan={2} className="py-2 px-2 text-center w-12 border-r border-slate-700">
+                    रोल नं
+                  </th>
+                  <th rowSpan={2} className="py-2 px-3 border-r border-slate-700 min-w-[180px]">
+                    छात्र विवरण (Student Info)
+                  </th>
+                  <th colSpan={(showAnnualTestCols ? 1 : 0) + 1 + (showAnnualOralCols ? 1 : 0) + 1} className="py-1 px-2 text-center bg-blue-900/90 border-r border-slate-700 text-blue-100">
+                    अर्धवार्षिक सत्र (Half-Yearly Exam)
+                  </th>
+                  <th colSpan={(showAnnualTestCols ? 1 : 0) + 1 + (showAnnualOralCols ? 1 : 0) + 1} className="py-1 px-2 text-center bg-purple-900/90 border-r border-slate-700 text-purple-100">
+                    वार्षिक सत्र (Annual Exam)
+                  </th>
+                  <th colSpan={3} className="py-1 px-2 text-center bg-slate-800 text-slate-100">
+                    महायोग व ग्रेड (Grand Total)
+                  </th>
+                </tr>
+                <tr className="text-[11px] font-semibold bg-slate-800 text-slate-200">
+                  {/* HY columns */}
+                  {showAnnualTestCols && (
+                    <th className="py-1 px-1.5 text-center bg-blue-950 text-blue-200 border-r border-slate-700">
+                      Test ({bulkAnnualTestMax})
+                    </th>
+                  )}
+                  <th className="py-1 px-1.5 text-center bg-blue-950 text-blue-100 border-r border-slate-700">
+                    लिखित ({bulkAnnualWrittenMax})
+                  </th>
+                  {showAnnualOralCols && (
+                    <th className="py-1 px-1.5 text-center bg-blue-950 text-amber-200 border-r border-slate-700">
+                      मौखिक ({bulkAnnualOralMax})
+                    </th>
+                  )}
+                  <th className="py-1 px-2 text-center bg-blue-900 text-white font-bold border-r-2 border-slate-700">
+                    HY योग
+                  </th>
+
+                  {/* Yearly columns */}
+                  {showAnnualTestCols && (
+                    <th className="py-1 px-1.5 text-center bg-purple-950 text-purple-200 border-r border-slate-700">
+                      Test ({bulkAnnualTestMax})
+                    </th>
+                  )}
+                  <th className="py-1 px-1.5 text-center bg-purple-950 text-purple-100 border-r border-slate-700">
+                    लिखित ({bulkAnnualWrittenMax})
+                  </th>
+                  {showAnnualOralCols && (
+                    <th className="py-1 px-1.5 text-center bg-purple-950 text-amber-200 border-r border-slate-700">
+                      मौखिक ({bulkAnnualOralMax})
+                    </th>
+                  )}
+                  <th className="py-1 px-2 text-center bg-purple-900 text-white font-bold border-r-2 border-slate-700">
+                    वार्षिक योग
+                  </th>
+
+                  {/* Grand total columns */}
+                  <th className="py-1 px-2 text-center bg-slate-900 text-white font-bold border-r border-slate-700">
+                    कुल अंक
+                  </th>
+                  <th className="py-1 px-2 text-center bg-slate-900 text-amber-300 font-bold border-r border-slate-700">
+                    प्रतिशत %
+                  </th>
+                  <th className="py-1 px-2 text-center bg-slate-900 text-white font-bold">
+                    ग्रेड
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-slate-200">
+                {filteredStudents.length === 0 ? (
+                  <tr>
+                    <td colSpan={14} className="py-8 text-center text-slate-500 font-semibold">
+                      {selectedClass} में कोई छात्र नहीं मिले।
+                    </td>
+                  </tr>
+                ) : (
+                  filteredStudents.map((st, idx) => {
+                    const row = subjectAnnualMarks[st.id] || {
+                      hyTestObt: 0, hyTestMax: bulkAnnualTestMax,
+                      hyWrittenObt: 0, hyWrittenMax: bulkAnnualWrittenMax,
+                      hyOralObt: 0, hyOralMax: bulkAnnualOralMax,
+                      hyPracObt: 0, hyPracMax: 0,
+                      yTestObt: 0, yTestMax: bulkAnnualTestMax,
+                      yWrittenObt: 0, yWrittenMax: bulkAnnualWrittenMax,
+                      yOralObt: 0, yOralMax: bulkAnnualOralMax,
+                      yPracObt: 0, yPracMax: 0,
+                    };
+
+                    const hyObtTotal = (showAnnualTestCols ? (row.hyTestObt || 0) : 0) + (row.hyWrittenObt || 0) + (showAnnualOralCols ? (row.hyOralObt || 0) : 0);
+                    const hyMaxTotal = (showAnnualTestCols ? (row.hyTestMax || bulkAnnualTestMax) : 0) + (row.hyWrittenMax || bulkAnnualWrittenMax) + (showAnnualOralCols ? (row.hyOralMax || bulkAnnualOralMax) : 0);
+
+                    const yObtTotal = (showAnnualTestCols ? (row.yTestObt || 0) : 0) + (row.yWrittenObt || 0) + (showAnnualOralCols ? (row.yOralObt || 0) : 0);
+                    const yMaxTotal = (showAnnualTestCols ? (row.yTestMax || bulkAnnualTestMax) : 0) + (row.yWrittenMax || bulkAnnualWrittenMax) + (showAnnualOralCols ? (row.yOralMax || bulkAnnualOralMax) : 0);
+
+                    const grandObt = hyObtTotal + yObtTotal;
+                    const grandMax = hyMaxTotal + yMaxTotal;
+                    const pct = grandMax > 0 ? (grandObt / grandMax) * 100 : 0;
+                    const gradeInfo = getGradeFromPercentage(pct);
+
+                    const isFilled = hyObtTotal > 0 || yObtTotal > 0;
+
+                    return (
+                      <tr
+                        key={st.id}
+                        className={`hover:bg-pink-50/40 transition-colors ${
+                          idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'
+                        }`}
+                      >
+                        {/* Roll No */}
+                        <td className="py-2 px-2 text-center font-mono font-bold text-slate-800 border-r border-slate-200">
+                          {st.rollNo || idx + 1}
+                        </td>
+
+                        {/* Student Name */}
+                        <td className="py-2 px-3 border-r border-slate-200">
+                          <div className="flex items-center justify-between gap-2">
+                            <div>
+                              <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                                <span>{st.name}</span>
+                                {st.gender === 'Female' && (
+                                  <span className="text-[10px] text-pink-600 font-bold bg-pink-100 px-1 rounded">👧</span>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-slate-500">
+                                {st.fatherName ? `पिता: ${st.fatherName}` : (st.srNo || st.admissionNo ? `SR: ${st.srNo || st.admissionNo}` : '')}
+                              </div>
+                            </div>
+                            {isFilled && (
+                              <CheckCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            )}
+                          </div>
+                        </td>
+
+                        {/* HY Test */}
+                        {showAnnualTestCols && (
+                          <td className="py-1 px-1.5 text-center bg-blue-50/30 border-r border-blue-200">
+                            <div className="flex items-center justify-center gap-1">
+                              <input
+                                type="number"
+                                min="0"
+                                max={row.hyTestMax}
+                                value={row.hyTestObt || ''}
+                                placeholder="0"
+                                onChange={e => handleSubjectAnnualCellChange(st.id, 'hyTestObt', Number(e.target.value))}
+                                className="w-11 text-center text-xs font-mono font-bold border border-blue-300 rounded p-1 bg-white focus:bg-blue-50 focus:ring-1 focus:ring-blue-500 shadow-2xs"
+                              />
+                              <span className="text-slate-400 text-[10px]">/</span>
+                              <input
+                                type="number"
+                                min="1"
+                                max="100"
+                                value={row.hyTestMax || bulkAnnualTestMax}
+                                onChange={e => handleSubjectAnnualCellChange(st.id, 'hyTestMax', Number(e.target.value))}
+                                className="w-9 text-center text-[10.5px] font-mono text-slate-500 border border-slate-200 rounded p-1 bg-slate-50 focus:bg-white"
+                                title="HY Test Max Marks"
+                              />
+                            </div>
+                          </td>
+                        )}
+
+                        {/* HY Written */}
+                        <td className="py-1 px-1.5 text-center bg-blue-50/30 border-r border-blue-200">
+                          <div className="flex items-center justify-center gap-1">
+                            <input
+                              type="number"
+                              min="0"
+                              max={row.hyWrittenMax}
+                              value={row.hyWrittenObt || ''}
+                              placeholder="0"
+                              onChange={e => handleSubjectAnnualCellChange(st.id, 'hyWrittenObt', Number(e.target.value))}
+                              className="w-12 text-center text-xs font-mono font-black text-blue-900 border border-blue-400 rounded p-1 bg-white focus:bg-blue-50 focus:ring-1 focus:ring-blue-500 shadow-2xs"
+                            />
+                            <span className="text-slate-400 text-[10px]">/</span>
+                            <input
+                              type="number"
+                              min="1"
+                              max="100"
+                              value={row.hyWrittenMax || bulkAnnualWrittenMax}
+                              onChange={e => handleSubjectAnnualCellChange(st.id, 'hyWrittenMax', Number(e.target.value))}
+                              className="w-9 text-center text-[10.5px] font-mono text-slate-500 border border-slate-200 rounded p-1 bg-slate-50 focus:bg-white"
+                              title="HY Written Max Marks"
+                            />
+                          </div>
+                        </td>
+
+                        {/* HY Oral */}
+                        {showAnnualOralCols && (
+                          <td className="py-1 px-1.5 text-center bg-amber-50/30 border-r border-amber-200">
+                            <div className="flex items-center justify-center gap-1">
+                              <input
+                                type="number"
+                                min="0"
+                                max={row.hyOralMax}
+                                value={row.hyOralObt || ''}
+                                placeholder="0"
+                                onChange={e => handleSubjectAnnualCellChange(st.id, 'hyOralObt', Number(e.target.value))}
+                                className="w-11 text-center text-xs font-mono font-bold text-amber-900 border border-amber-300 rounded p-1 bg-white focus:bg-amber-50 focus:ring-1 focus:ring-amber-500 shadow-2xs"
+                              />
+                              <span className="text-slate-400 text-[10px]">/</span>
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={row.hyOralMax || bulkAnnualOralMax}
+                                onChange={e => handleSubjectAnnualCellChange(st.id, 'hyOralMax', Number(e.target.value))}
+                                className="w-9 text-center text-[10.5px] font-mono text-slate-500 border border-slate-200 rounded p-1 bg-slate-50 focus:bg-white"
+                                title="HY Oral Max Marks"
+                              />
+                            </div>
+                          </td>
+                        )}
+
+                        {/* HY Total */}
+                        <td className="py-1 px-2.5 text-center bg-blue-100/50 border-r-2 border-slate-300 font-mono font-black text-blue-950">
+                          <span>{hyObtTotal}</span>
+                          <span className="text-[10px] text-blue-600 font-normal"> / {hyMaxTotal}</span>
+                        </td>
+
+                        {/* YEARLY Test */}
+                        {showAnnualTestCols && (
+                          <td className="py-1 px-1.5 text-center bg-purple-50/30 border-r border-purple-200">
+                            <div className="flex items-center justify-center gap-1">
+                              <input
+                                type="number"
+                                min="0"
+                                max={row.yTestMax}
+                                value={row.yTestObt || ''}
+                                placeholder="0"
+                                onChange={e => handleSubjectAnnualCellChange(st.id, 'yTestObt', Number(e.target.value))}
+                                className="w-11 text-center text-xs font-mono font-bold border border-purple-300 rounded p-1 bg-white focus:bg-purple-50 focus:ring-1 focus:ring-purple-500 shadow-2xs"
+                              />
+                              <span className="text-slate-400 text-[10px]">/</span>
+                              <input
+                                type="number"
+                                min="1"
+                                max="100"
+                                value={row.yTestMax || bulkAnnualTestMax}
+                                onChange={e => handleSubjectAnnualCellChange(st.id, 'yTestMax', Number(e.target.value))}
+                                className="w-9 text-center text-[10.5px] font-mono text-slate-500 border border-slate-200 rounded p-1 bg-slate-50 focus:bg-white"
+                                title="Yearly Test Max Marks"
+                              />
+                            </div>
+                          </td>
+                        )}
+
+                        {/* YEARLY Written */}
+                        <td className="py-1 px-1.5 text-center bg-purple-50/30 border-r border-purple-200">
+                          <div className="flex items-center justify-center gap-1">
+                            <input
+                              type="number"
+                              min="0"
+                              max={row.yWrittenMax}
+                              value={row.yWrittenObt || ''}
+                              placeholder="0"
+                              onChange={e => handleSubjectAnnualCellChange(st.id, 'yWrittenObt', Number(e.target.value))}
+                              className="w-12 text-center text-xs font-mono font-black text-purple-900 border border-purple-400 rounded p-1 bg-white focus:bg-purple-50 focus:ring-1 focus:ring-purple-500 shadow-2xs"
+                            />
+                            <span className="text-slate-400 text-[10px]">/</span>
+                            <input
+                              type="number"
+                              min="1"
+                              max="100"
+                              value={row.yWrittenMax || bulkAnnualWrittenMax}
+                              onChange={e => handleSubjectAnnualCellChange(st.id, 'yWrittenMax', Number(e.target.value))}
+                              className="w-9 text-center text-[10.5px] font-mono text-slate-500 border border-slate-200 rounded p-1 bg-slate-50 focus:bg-white"
+                              title="Yearly Written Max Marks"
+                            />
+                          </div>
+                        </td>
+
+                        {/* YEARLY Oral */}
+                        {showAnnualOralCols && (
+                          <td className="py-1 px-1.5 text-center bg-amber-50/30 border-r border-amber-200">
+                            <div className="flex items-center justify-center gap-1">
+                              <input
+                                type="number"
+                                min="0"
+                                max={row.yOralMax}
+                                value={row.yOralObt || ''}
+                                placeholder="0"
+                                onChange={e => handleSubjectAnnualCellChange(st.id, 'yOralObt', Number(e.target.value))}
+                                className="w-11 text-center text-xs font-mono font-bold text-amber-900 border border-amber-300 rounded p-1 bg-white focus:bg-amber-50 focus:ring-1 focus:ring-amber-500 shadow-2xs"
+                              />
+                              <span className="text-slate-400 text-[10px]">/</span>
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={row.yOralMax || bulkAnnualOralMax}
+                                onChange={e => handleSubjectAnnualCellChange(st.id, 'yOralMax', Number(e.target.value))}
+                                className="w-9 text-center text-[10.5px] font-mono text-slate-500 border border-slate-200 rounded p-1 bg-slate-50 focus:bg-white"
+                                title="Yearly Oral Max Marks"
+                              />
+                            </div>
+                          </td>
+                        )}
+
+                        {/* Yearly Total */}
+                        <td className="py-1 px-2.5 text-center bg-purple-100/50 border-r-2 border-slate-300 font-mono font-black text-purple-950">
+                          <span>{yObtTotal}</span>
+                          <span className="text-[10px] text-purple-600 font-normal"> / {yMaxTotal}</span>
+                        </td>
+
+                        {/* GRAND TOTAL */}
+                        <td className="py-1 px-2.5 text-center bg-slate-50 font-mono font-black text-slate-900 border-r border-slate-200">
+                          <span>{grandObt}</span>
+                          <span className="text-[10px] text-slate-400 font-normal"> / {grandMax}</span>
+                        </td>
+
+                        {/* PERCENTAGE */}
+                        <td className="py-1 px-2 text-center font-mono font-bold text-slate-800 border-r border-slate-200">
+                          {pct.toFixed(1)}%
+                        </td>
+
+                        {/* GRADE */}
+                        <td className="py-1 px-2 text-center">
+                          <span className={`text-[10.5px] font-black px-2 py-0.5 rounded-md border ${gradeInfo.bg} ${gradeInfo.text}`}>
+                            {gradeInfo.label}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* 5. Footer Actions & Save Button */}
+          <div className="pt-3 border-t border-slate-200 flex flex-wrap items-center justify-between gap-4 bg-slate-50/60 p-3 rounded-xl">
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-slate-600 font-semibold">
+                कुल छात्र: <strong>{classStudents.length}</strong> | पूर्ण अंक भरे: <strong>
+                  {classStudents.filter(st => {
+                    const r = subjectAnnualMarks[st.id];
+                    return r && (r.hyWrittenObt > 0 || r.yWrittenObt > 0);
+                  }).length}
+                </strong>
+              </span>
+
+              {isSubjectAnnualSaved && (
+                <span className="text-xs text-emerald-800 font-black flex items-center gap-1.5 bg-emerald-100 border border-emerald-300 px-3 py-1.5 rounded-lg shadow-xs">
+                  <CheckCircle className="w-4 h-4 text-emerald-600" />
+                  <span>{subject} ({selectedClass}) के सभी वार्षिक अंक सफलतापूर्वक डेटाबेस में सुरक्षित हो गए!</span>
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleSaveSubjectAnnualDraft}
+                className="text-xs font-bold px-4 py-2 border-slate-300 text-slate-700 hover:bg-slate-100 cursor-pointer"
+              >
+                <Save className="w-3.5 h-3.5 mr-1 text-pink-600" />
+                ड्राफ्ट सेव करें
+              </Button>
+
+              <Button
+                type="button"
+                onClick={handleSaveSubjectAnnualMarks}
+                disabled={isSubjectAnnualSaving || classStudents.length === 0}
+                className="bg-pink-700 hover:bg-pink-800 text-white text-xs font-black px-8 py-2.5 rounded-lg shadow-md flex items-center gap-2 transition-all cursor-pointer"
+              >
+                <Save className="w-4 h-4" />
+                <span>
+                  {isSubjectAnnualSaving
+                    ? 'सुरक्षित हो रहा है...'
+                    : `Save All Marks for ${subject} (${selectedClass})`}
+                </span>
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODE 6: REPORT CARD ATTENDANCE LEDGER                                      */}
       {/* ========================================================================= */}
       {activeMode === 'attendance' && (
         <Card className="p-4 bg-white border border-slate-200 shadow-xs space-y-4">

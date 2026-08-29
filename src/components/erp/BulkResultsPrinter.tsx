@@ -92,18 +92,18 @@ function ReportCardPrintSheet({ student, selectedTemplate = 'classic_portrait', 
       : (hyOral ? hyOral.marksObtained : 0);
     const hyOralMax = (hyExam && (hyExam as any).oralMaxMarks !== undefined && (hyExam as any).oralMaxMarks > 0)
       ? (hyExam as any).oralMaxMarks
-      : (hyOral ? hyOral.maxMarks : 0);
+      : (hyOral ? hyOral.maxMarks : 20);
     const hyOralExists = (hyExam && (hyExam as any).oralMarks !== undefined) || !!hyOral || hyOralVal > 0;
-    const hasHyOral = hyOralExists || hyOralMax > 0;
+    const hasHyOral = hyOralExists || (hyExam && (hyExam as any).oralMaxMarks !== undefined && (hyExam as any).oralMaxMarks > 0);
 
     const yOralVal = (yExam && (yExam as any).oralMarks !== undefined)
       ? (yExam as any).oralMarks
       : (yOral ? yOral.marksObtained : 0);
     const yOralMax = (yExam && (yExam as any).oralMaxMarks !== undefined && (yExam as any).oralMaxMarks > 0)
       ? (yExam as any).oralMaxMarks
-      : (yOral ? yOral.maxMarks : 0);
+      : (yOral ? yOral.maxMarks : 20);
     const yOralExists = (yExam && (yExam as any).oralMarks !== undefined) || !!yOral || yOralVal > 0;
-    const hasYOral = yOralExists || yOralMax > 0;
+    const hasYOral = yOralExists || (yExam && (yExam as any).oralMaxMarks !== undefined && (yExam as any).oralMaxMarks > 0);
 
     // Practical values
     const hyPracVal = (hyExam && hyExam.practicalMarks !== undefined)
@@ -121,21 +121,20 @@ function ReportCardPrintSheet({ student, selectedTemplate = 'classic_portrait', 
     const hasHyPracData = (hyExam && (hyExam.practicalMarks !== undefined || (hyExam as any).practicalMarksObtained !== undefined)) || !!hyPrac || (isHyPractical && hyPracVal > 0);
     const hasHyPrac = isHyPractical && (hasHyPracData || hyPracMax > 0);
 
-    // Written / Theory & Test
-    const hyTestVal = hyTest ? hyTest.marksObtained : 0;
-    const hyTestMax = hyTest ? hyTest.maxMarks : 10;
-    const hyExamVal = hyExam ? hyExam.marksObtained : 0;
-    let defaultHyTheoryMax = isHyPractical ? (hyPracMax === 30 ? 60 : Math.max(0, 100 - hyTestMax - hyPracMax - (hasHyOral ? hyOralMax : 0))) : (hasHyOral ? Math.max(0, 90 - hyOralMax) : 90);
-    let hyExamMax = hyExam ? (hyExam.maxMarks ?? defaultHyTheoryMax) : defaultHyTheoryMax;
-    if ((isHyPractical || hasHyOral) && (hyPracMax > 0 || hyOralMax > 0) && hyExamMax + (isHyPractical ? hyPracMax : 0) + (hasHyOral ? hyOralMax : 0) + hyTestMax > 100 && hyExamMax >= 70) {
-      hyExamMax = Math.max(0, 100 - hyTestMax - (isHyPractical ? hyPracMax : 0) - (hasHyOral ? hyOralMax : 0));
-    }
+    // Paper II values (Half-Yearly)
+    const hyPaper2Val = (hyExam && (hyExam as any).paper2Marks !== undefined)
+      ? (hyExam as any).paper2Marks
+      : (hyExam && hyExam.practicalMarks !== undefined && !isSubjectPractical ? hyExam.practicalMarks : 0);
+    const hyPaper2Max = (hyExam && (hyExam as any).paper2MaxMarks !== undefined && (hyExam as any).paper2MaxMarks > 0)
+      ? (hyExam as any).paper2MaxMarks
+      : (hyExam && hyExam.practicalMaxMarks !== undefined && hyExam.practicalMaxMarks > 0
+          ? hyExam.practicalMaxMarks
+          : 35);
+    const hyPaper2Exists = (hyExam && (hyExam as any).paper2Marks !== undefined) || 
+      (hyExam && hyExam.practicalMarks !== undefined && !isSubjectPractical);
+    const hasHyPaper2 = hyPaper2Exists || (hyExam && (hyExam as any).paper2Marks !== undefined);
 
-    const hasHy = !!(hyTest || hyExam || hyPrac || hyOral || (hyExam && ((hyExam as any).oralMarks !== undefined || hyExam.practicalMarks !== undefined)));
-    const hyMax = hyTestMax + hyExamMax + (hasHyOral ? hyOralMax : 0) + (isHyPractical ? hyPracMax : 0);
-    const hyObt = (hyTest ? hyTestVal : 0) + (hyExam ? hyExamVal : 0) + (hasHyOral ? hyOralVal : 0) + (isHyPractical ? hyPracVal : 0);
-
-    // Yearly values
+    // Yearly Practical & Paper II
     const yPracVal = (yExam && yExam.practicalMarks !== undefined)
       ? yExam.practicalMarks
       : ((yExam && (yExam as any).practicalMarksObtained !== undefined)
@@ -151,18 +150,74 @@ function ReportCardPrintSheet({ student, selectedTemplate = 'classic_portrait', 
     const hasYPracData = (yExam && (yExam.practicalMarks !== undefined || (yExam as any).practicalMarksObtained !== undefined)) || !!yPrac || (isYPractical && yPracVal > 0);
     const hasYPrac = isYPractical && (hasYPracData || yPracMax > 0);
 
+    // Paper II values (Yearly)
+    const yPaper2Val = (yExam && (yExam as any).paper2Marks !== undefined)
+      ? (yExam as any).paper2Marks
+      : (yExam && yExam.practicalMarks !== undefined && !isSubjectPractical ? yExam.practicalMarks : 0);
+    const yPaper2Max = (yExam && (yExam as any).paper2MaxMarks !== undefined && (yExam as any).paper2MaxMarks > 0)
+      ? (yExam as any).paper2MaxMarks
+      : (yExam && yExam.practicalMaxMarks !== undefined && yExam.practicalMaxMarks > 0
+          ? yExam.practicalMaxMarks
+          : 35);
+    const yPaper2Exists = (yExam && (yExam as any).paper2Marks !== undefined) || 
+      (yExam && yExam.practicalMarks !== undefined && !isSubjectPractical);
+    const hasYPaper2 = yPaper2Exists || (yExam && (yExam as any).paper2Marks !== undefined);
+
+    // Written / Theory & Test (Half-Yearly)
+    const hyTestVal = hyTest ? hyTest.marksObtained : 0;
+    const hyTestMax = hyTest ? (hyTest.maxMarks || 10) : 10;
+    const hyExamVal = hyExam ? hyExam.marksObtained : 0;
+    let defaultHyTheoryMax = isHyPractical ? (hyPracMax === 30 ? 60 : Math.max(0, 100 - hyTestMax - hyPracMax - (hasHyOral ? hyOralMax : 0))) : (hasHyOral ? Math.max(0, 90 - hyOralMax) : (hasHyPaper2 ? 35 : 90));
+    let hyExamMax = hyExam ? (hyExam.maxMarks ?? defaultHyTheoryMax) : defaultHyTheoryMax;
+    if ((isHyPractical || hasHyOral) && (hyPracMax > 0 || hyOralMax > 0) && hyExamMax + (isHyPractical ? hyPracMax : 0) + (hasHyOral ? hyOralMax : 0) + hyTestMax > 100 && hyExamMax >= 70) {
+      hyExamMax = Math.max(0, 100 - hyTestMax - (isHyPractical ? hyPracMax : 0) - (hasHyOral ? hyOralMax : 0));
+    }
+
+    const hasHy = !!(hyTest || hyExam || hyPrac || hyOral || (hyExam && ((hyExam as any).oralMarks !== undefined || hyExam.practicalMarks !== undefined || (hyExam as any).paper2Marks !== undefined)));
+    
+    let hyMax = (hyTest ? hyTestMax : (hasHy ? hyTestMax : 0)) + (hyExam ? hyExamMax : (hasHy ? hyExamMax : 0));
+    let hyObt = (hyTest ? hyTestVal : 0) + (hyExam ? hyExamVal : 0);
+
+    if (hasHyPaper2 && !isSubjectPractical) {
+      hyMax += hyPaper2Max;
+      hyObt += hyPaper2Val;
+    } else if (isHyPractical) {
+      hyMax += hyPracMax;
+      hyObt += hyPracVal;
+    }
+
+    if (hasHyOral) {
+      hyMax += hyOralMax;
+      hyObt += hyOralVal;
+    }
+
+    // Written / Theory & Test (Yearly)
     const yTestVal = yTest ? yTest.marksObtained : 0;
-    const yTestMax = yTest ? yTest.maxMarks : 10;
+    const yTestMax = yTest ? (yTest.maxMarks || 10) : 10;
     const yExamVal = yExam ? yExam.marksObtained : 0;
-    let defaultYTheoryMax = isYPractical ? (yPracMax === 30 ? 60 : Math.max(0, 100 - yTestMax - yPracMax - (hasYOral ? yOralMax : 0))) : (hasYOral ? Math.max(0, 90 - yOralMax) : 90);
+    let defaultYTheoryMax = isYPractical ? (yPracMax === 30 ? 60 : Math.max(0, 100 - yTestMax - yPracMax - (hasYOral ? yOralMax : 0))) : (hasYOral ? Math.max(0, 90 - yOralMax) : (hasYPaper2 ? 35 : 90));
     let yExamMax = yExam ? (yExam.maxMarks ?? defaultYTheoryMax) : defaultYTheoryMax;
     if ((isYPractical || hasYOral) && (yPracMax > 0 || yOralMax > 0) && yExamMax + (isYPractical ? yPracMax : 0) + (hasYOral ? yOralMax : 0) + yTestMax > 100 && yExamMax >= 70) {
       yExamMax = Math.max(0, 100 - yTestMax - (isYPractical ? yPracMax : 0) - (hasYOral ? yOralMax : 0));
     }
 
-    const hasY = !!(yTest || yExam || yPrac || yOral || (yExam && ((yExam as any).oralMarks !== undefined || yExam.practicalMarks !== undefined)));
-    const yMax = yTestMax + yExamMax + (hasYOral ? yOralMax : 0) + (isYPractical ? yPracMax : 0);
-    const yObt = (yTest ? yTestVal : 0) + (yExam ? yExamVal : 0) + (hasYOral ? yOralVal : 0) + (isYPractical ? yPracVal : 0);
+    const hasY = !!(yTest || yExam || yPrac || yOral || (yExam && ((yExam as any).oralMarks !== undefined || yExam.practicalMarks !== undefined || (yExam as any).paper2Marks !== undefined)));
+    
+    let yMax = (yTest ? yTestMax : (hasY ? yTestMax : 0)) + (yExam ? yExamMax : (hasY ? yExamMax : 0));
+    let yObt = (yTest ? yTestVal : 0) + (yExam ? yExamVal : 0);
+
+    if (hasYPaper2 && !isSubjectPractical) {
+      yMax += yPaper2Max;
+      yObt += yPaper2Val;
+    } else if (isYPractical) {
+      yMax += yPracMax;
+      yObt += yPracVal;
+    }
+
+    if (hasYOral) {
+      yMax += yOralMax;
+      yObt += yOralVal;
+    }
 
     const hasAny = hasHy || hasY;
 
@@ -203,22 +258,28 @@ function ReportCardPrintSheet({ student, selectedTemplate = 'classic_portrait', 
       hasYOral,
       hasHyPrac,
       hasYPrac,
+      hasHyPaper2,
+      hasYPaper2,
       hyTestVal,
       hyExamVal,
+      hyPaper2Val,
       hyOralVal,
       hyPracVal,
       hyTestMax,
       hyExamMax,
+      hyPaper2Max,
       hyOralMax,
       hyPracMax,
       hyMax,
       hyObt,
       yTestVal,
       yExamVal,
+      yPaper2Val,
       yOralVal,
       yPracVal,
       yTestMax,
       yExamMax,
+      yPaper2Max,
       yOralMax,
       yPracMax,
       yMax,
@@ -228,10 +289,12 @@ function ReportCardPrintSheet({ student, selectedTemplate = 'classic_portrait', 
       grade,
       hyTestExists: !!hyTest,
       hyExamExists: !!hyExam,
+      hyPaper2Exists,
       hyOralExists,
       hyPracExists: hasHyPracData,
       yTestExists: !!yTest,
       yExamExists: !!yExam,
+      yPaper2Exists,
       yOralExists,
       yPracExists: hasYPracData,
     };

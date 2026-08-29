@@ -219,8 +219,10 @@ export interface ExamMark {
   teacherId: string;
   examType: ExamType;
   subject: string;
-  marksObtained: number; // Theory / Written marks obtained
-  maxMarks: number; // Theory / Written max marks
+  marksObtained: number; // Theory / Written / Paper I marks obtained
+  maxMarks: number; // Theory / Written / Paper I max marks
+  paper2Marks?: number; // Paper II marks obtained (e.g. for Hindi II, English II, Math II, etc.)
+  paper2MaxMarks?: number; // Paper II maximum marks (e.g. 35, 45, 50, etc.)
   oralMarks?: number; // Oral marks obtained (for languages, junior classes, or separate viva)
   oralMaxMarks?: number; // Oral maximum marks
   practicalMarks?: number; // Practical / Experimental marks obtained (e.g. for Home Science, Science, Computer, Drawing, etc.)

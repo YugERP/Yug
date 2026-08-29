@@ -1,3 +1,4 @@
+import React from 'react';
 import { type Student, type School } from '../../types';
 
 export interface SubjectRowData {
@@ -9,24 +10,30 @@ export interface SubjectRowData {
   hasAny: boolean;
   hasHyOral: boolean;
   hasHyPrac: boolean;
+  hasHyPaper2?: boolean;
   hasYOral: boolean;
   hasYPrac: boolean;
+  hasYPaper2?: boolean;
   hyTestVal: number;
-  hyExamVal: number;
+  hyExamVal: number; // Paper I / Written obtained
+  hyPaper2Val?: number; // Paper II obtained
   hyOralVal: number;
   hyPracVal: number;
   hyTestMax: number;
-  hyExamMax: number;
+  hyExamMax: number; // Paper I / Written max
+  hyPaper2Max?: number; // Paper II max
   hyOralMax: number;
   hyPracMax: number;
   hyMax: number;
   hyObt: number;
   yTestVal: number;
-  yExamVal: number;
+  yExamVal: number; // Paper I / Written obtained
+  yPaper2Val?: number; // Paper II obtained
   yOralVal: number;
   yPracVal: number;
   yTestMax: number;
-  yExamMax: number;
+  yExamMax: number; // Paper I / Written max
+  yPaper2Max?: number; // Paper II max
   yOralMax: number;
   yPracMax: number;
   yMax: number;
@@ -36,10 +43,12 @@ export interface SubjectRowData {
   grade: string;
   hyTestExists: boolean;
   hyExamExists: boolean;
+  hyPaper2Exists?: boolean;
   hyOralExists: boolean;
   hyPracExists: boolean;
   yTestExists: boolean;
   yExamExists: boolean;
+  yPaper2Exists?: boolean;
   yOralExists: boolean;
   yPracExists: boolean;
 }
@@ -295,3 +304,24 @@ export const getDynamicScaling = (subjectCount: number, isLandscape: boolean) =>
 };
 
 export const displayVal = (exists: boolean, val: number) => exists ? val : '';
+
+export const renderMarkCell = (
+  exists: boolean, 
+  val: number, 
+  max?: number, 
+  fallbackText: string = '-'
+): React.ReactNode => {
+  if (!exists && (val === 0 || val === undefined)) {
+    return React.createElement('span', { className: 'text-slate-300 font-sans text-[8.5px]' }, fallbackText);
+  }
+  
+  return React.createElement(
+    'span',
+    { className: 'inline-flex items-baseline justify-center gap-0.5 font-mono' },
+    React.createElement('span', { className: 'font-bold text-slate-900' }, val),
+    max !== undefined && max > 0
+      ? React.createElement('span', { className: 'text-[7.5px] font-semibold text-slate-400 font-sans tracking-tighter' }, `/${max}`)
+      : null
+  );
+};
+
