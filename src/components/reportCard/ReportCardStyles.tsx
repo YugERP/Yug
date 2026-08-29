@@ -20,28 +20,28 @@ export const ReportCardStyles: React.FC<ReportCardStylesProps> = ({ isLandscape,
             margin: 0 !important;
             padding: 0 !important;
             width: 100% !important;
-            height: 100% !important;
+            height: auto !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
           
           .print-card-wrapper {
             width: 100% !important;
-            height: ${isLandscape ? '203mm' : '290mm'} !important;
-            min-height: ${isLandscape ? '203mm' : '290mm'} !important;
-            max-height: ${isLandscape ? '203mm' : '290mm'} !important;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
             page-break-after: always !important;
             break-after: page !important;
-            display: flex !important;
-            flex-direction: column !important;
             box-sizing: border-box !important;
             margin: 0 !important;
             padding: 0 !important;
             border: none !important;
             background: transparent !important;
             overflow: hidden !important;
+          }
+
+          .print-card-wrapper:last-child {
+            page-break-after: avoid !important;
+            break-after: avoid !important;
           }
 
           .print-container, 
@@ -51,9 +51,6 @@ export const ReportCardStyles: React.FC<ReportCardStylesProps> = ({ isLandscape,
             background: white !important;
             width: 100% !important;
             max-width: 100% !important;
-            height: ${isLandscape ? '202mm' : '289mm'} !important;
-            min-height: ${isLandscape ? '202mm' : '289mm'} !important;
-            max-height: ${isLandscape ? '202mm' : '289mm'} !important;
             box-sizing: border-box !important;
             border: 5px double var(--rc-color, #002060) !important;
             border-radius: 0 !important;
@@ -61,9 +58,6 @@ export const ReportCardStyles: React.FC<ReportCardStylesProps> = ({ isLandscape,
             padding: ${isLandscape ? '2.5mm 3.5mm' : '3mm 4mm'} !important;
             margin: 0 auto !important;
             overflow: hidden !important;
-            display: flex !important;
-            flex-direction: column !important;
-            justify-content: space-between !important;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
           }

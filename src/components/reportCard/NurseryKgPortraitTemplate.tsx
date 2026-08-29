@@ -28,9 +28,9 @@ export const NurseryKgPortraitTemplate: React.FC<ReportCardCommonProps> = ({
   const dyn = getDynamicScaling(subCount, false);
 
   return (
-    <div className="flex flex-col justify-between h-full w-full flex-1">
+    <div className="w-full">
       {/* Top Header Block */}
-      <div className="shrink-0">
+      <div>
         {/* Header section with UDISE */}
         <div className="flex justify-end items-center font-serif text-[10px] font-black text-[#CC0000] uppercase tracking-wider mb-0.5">
           <div>UDISE CODE-{currentSchool?.udiseCode || '09040803605'}</div>
@@ -86,7 +86,7 @@ export const NurseryKgPortraitTemplate: React.FC<ReportCardCommonProps> = ({
       </div>
 
       {/* Student metadata + photo box */}
-      <div className="shrink-0 flex flex-row gap-4 items-start justify-between mb-2">
+      <div className="flex flex-row gap-4 items-start justify-between mb-2">
         <div className={`flex-1 grid grid-cols-2 gap-x-6 ${dyn.studentInfoGap} ${dyn.studentInfoText} text-slate-900 font-serif w-full`}>
           <div className="flex items-baseline">
             <span className="font-bold text-[#002060] w-24 shrink-0">Admn.No</span>
@@ -146,7 +146,7 @@ export const NurseryKgPortraitTemplate: React.FC<ReportCardCommonProps> = ({
       </div>
 
       {/* Nursery/KG Table (Oral, Written, Test) */}
-      <div className="w-full flex-1 flex flex-col justify-center my-1">
+      <div className="w-full my-1">
         <table className={`w-full table-fixed border-2 border-[#002060] text-center ${dyn.tableText} font-serif border-collapse`}>
           <thead>
             <tr className="border-b-2 border-[#002060] bg-slate-50">
@@ -219,7 +219,7 @@ export const NurseryKgPortraitTemplate: React.FC<ReportCardCommonProps> = ({
       </div>
 
       {/* Bottom Summary, Signatures & Instructions Block */}
-      <div className="shrink-0 flex flex-col justify-end">
+      <div>
         {/* Results summary 2-column grid */}
         <div className={`grid grid-cols-2 gap-x-8 ${dyn.summarySpace} ${dyn.summaryText} text-slate-900 my-1 pt-0.5 font-serif`}>
           <div className={dyn.summarySpace}>

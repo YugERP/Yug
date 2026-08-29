@@ -28,9 +28,9 @@ export const LandscapeProTemplate: React.FC<ReportCardCommonProps> = ({
   const dyn = getDynamicScaling(subCount, true);
 
   return (
-    <div className="flex flex-col justify-between h-full w-full flex-1">
+    <div className="w-full">
       {/* Top Header Block */}
-      <div className="shrink-0">
+      <div>
         {/* Header section with UDISE */}
         <div className="flex justify-end items-center font-serif text-[9px] font-black text-[#CC0000] uppercase tracking-wider mb-0.5">
           <div>UDISE CODE-{currentSchool?.udiseCode || '09040803605'}</div>
@@ -85,7 +85,7 @@ export const LandscapeProTemplate: React.FC<ReportCardCommonProps> = ({
       </div>
 
       {/* Student metadata + photo box */}
-      <div className="shrink-0 border border-[#002060] rounded p-1.5 my-1 bg-slate-50/20">
+      <div className="border border-[#002060] rounded p-1.5 my-1 bg-slate-50/20">
         <div className="flex flex-row gap-3 items-center justify-between">
           <div className={`flex-1 grid grid-cols-3 gap-x-4 ${dyn.studentInfoGap} ${dyn.studentInfoText} text-slate-900 font-serif`}>
             <div className="flex items-baseline">
@@ -147,10 +147,10 @@ export const LandscapeProTemplate: React.FC<ReportCardCommonProps> = ({
       </div>
 
       {/* Side-by-Side: Table (Col 9) + Summary Card (Col 3) */}
-      <div className="flex-1 flex flex-col justify-center my-1">
-        <div className="grid grid-cols-12 gap-2 items-stretch h-full">
+      <div className="w-full my-1">
+        <div className="grid grid-cols-12 gap-2 items-start">
           {/* Marks Table */}
-          <div className="col-span-9 flex flex-col justify-center">
+          <div className="col-span-9">
             <table className={`w-full table-fixed border-2 border-[#002060] text-center ${dyn.tableText} font-serif border-collapse`}>
               <thead>
                 <tr className="border-b-2 border-[#002060] bg-slate-50">
@@ -276,7 +276,7 @@ export const LandscapeProTemplate: React.FC<ReportCardCommonProps> = ({
       </div>
 
       {/* Instructions footer */}
-      <div className="shrink-0 border-t border-dashed border-[#002060] pt-1 mt-1">
+      <div className="border-t border-dashed border-[#002060] pt-1 mt-1">
         <table className={`w-full text-center border border-[#002060] ${dyn.gradingScaleText} font-serif border-collapse`}>
           <thead>
             <tr className="bg-slate-50 font-bold border-b border-[#002060] text-slate-700">
