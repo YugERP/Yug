@@ -1,11 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../../store';
 import { Card, Button, Label, Input } from '../UI';
 import { type Student, type ExamType, type ExamMark } from '../../types';
 import { 
   Award, CheckCircle, Search, Save, Calendar, CheckSquare, Sparkles, 
   Layers, Users, User, ChevronLeft, ChevronRight, Sliders, Grid, BookOpen,
-  ArrowRight, RefreshCw, Check, FlaskConical, Trash2
+  ArrowRight, RefreshCw, Check, FlaskConical, Trash2, Eye, EyeOff,
+  History, RotateCcw, AlertTriangle, Filter, HardDrive, Bookmark, CheckCircle2,
+  FileText
 } from 'lucide-react';
 import { 
   normalizeGrade, isSameGrade, getDefaultSubjectsForGrade, ALL_STANDARD_CLASSES, 
@@ -13,6 +15,16 @@ import {
 } from '../../utils/gradeHelper';
 
 type EntryMode = 'single-subject' | 'student-mixed' | 'class-matrix' | 'attendance';
+export type MatrixPattern = 'written-oral' | 'paper-i-ii' | 'written-prac' | 'written-only' | 'all-composite';
+
+export interface MatrixCellData {
+  obt: number;
+  max: number;
+  oralObt?: number;
+  oralMax?: number;
+  pracObt?: number;
+  pracMax?: number;
+}
 
 const PRESET_MAX_MARKS = [10, 20, 25, 30, 50, 60, 70, 80, 90, 100];
 const PRESET_PRACTICAL_MAX_MARKS = [10, 15, 20, 25, 30, 40, 50];
@@ -71,6 +83,65 @@ export function ExamResults() {
   }, [selectedClass, classStudents]);
 
   const [subject, setSubject] = useState(subjects[0] || 'Hindi');
+
+  // -------------------------------------------------------------
+  // MODE 3: CLASS MASTER GRID & MULTI-COMPONENT MATRIX STATE
+  // -------------------------------------------------------------
+  const [matrixMarks, setMatrixMarks] = useState<Record<string, MatrixCellData>>({});
+  const [matrixPattern, setMatrixPattern] = useState<MatrixPattern>('written-oral');
+  const [matrixSubjectFilter, setMatrixSubjectFilter] = useState<string>('ALL');
+  const [hideCompletedSubjects, setHideCompletedSubjects] = useState<boolean>(false);
+  const [bulkMatrixWrittenMax, setBulkMatrixWrittenMax] = useState<number>(80);
+  const [bulkMatrixOralPracMax, setBulkMatrixOralPracMax] = useState<number>(20);
+  const [isMatrixSaved, setIsMatrixSaved] = useState(false);
+  const [isMatrixSaving, setIsMatrixSaving] = useState(false);
+  const [isMatrixDraftSaved, setIsMatrixDraftSaved] = useState(false);
+
+  // Auto-Save & Offline Draft Recovery State
+  const [draftInfo, setDraftInfo] = useState<{ timestamp: string; count: number; pattern: MatrixPattern } | null>(null);
+  const [autoSaveNotice, setAutoSaveNotice] = useState<string>('');
+
+  // Subject completion statistics for Mode 3 (Matrix)
+  const matrixSubjectStats = React.useMemo(() => {
+    return subjects.map(sub => {
+      let filledStudents = 0;
+      classStudents.forEach(st => {
+        const cell = matrixMarks[`${st.id}:::${sub}`];
+        if (cell && (
+          (cell.obt !== undefined && cell.obt > 0) || 
+          (cell.oralObt !== undefined && cell.oralObt > 0) || 
+          (cell.pracObt !== undefined && cell.pracObt > 0)
+        )) {
+          filledStudents++;
+        }
+      });
+      const total = classStudents.length;
+      const isComplete = total > 0 && filledStudents >= total;
+      return {
+        subject: sub,
+        filledStudents,
+        totalStudents: total,
+        isComplete
+      };
+    });
+  }, [subjects, classStudents, matrixMarks]);
+
+  const completedSubjectsCount = matrixSubjectStats.filter(s => s.isComplete).length;
+
+  // Visible subjects in Matrix based on hideCompletedSubjects and matrixSubjectFilter
+  const visibleMatrixSubjects = React.useMemo(() => {
+    let list = subjects;
+    if (hideCompletedSubjects) {
+      list = list.filter(sub => {
+        const stat = matrixSubjectStats.find(s => isSameSubject(s.subject, sub));
+        return !stat?.isComplete;
+      });
+    }
+    if (matrixSubjectFilter !== 'ALL') {
+      list = list.filter(sub => isSameSubject(sub, matrixSubjectFilter));
+    }
+    return list;
+  }, [subjects, hideCompletedSubjects, matrixSubjectFilter, matrixSubjectStats]);
 
   // Keep subject in sync if list changes
   useEffect(() => {
@@ -183,29 +254,86 @@ export function ExamResults() {
     setIsStudentMixedSaved(false);
   }, [selectedStudentId, selectedClass, marks, subjects]);
 
-  // -------------------------------------------------------------
-  // MODE 3: CLASS MASTER GRID STATE
-  // -------------------------------------------------------------
-  const [matrixMarks, setMatrixMarks] = useState<Record<string, { obt: number; max: number }>>({});
-  const [isMatrixSaved, setIsMatrixSaved] = useState(false);
-  const [isMatrixSaving, setIsMatrixSaving] = useState(false);
-
+  // Load marks & check draft for Mode 3 when class or examType changes
   useEffect(() => {
-    const map: Record<string, { obt: number; max: number }> = {};
-    const defaultMax = (examType === 'Half-Yearly Test' || examType === 'Yearly Test') ? 10 : isExamTypePracticalOnly ? 30 : 90;
+    const map: Record<string, MatrixCellData> = {};
+    const isTest = examType === 'Half-Yearly Test' || examType === 'Yearly Test';
 
     classStudents.forEach(st => {
       subjects.forEach(sub => {
         const found = marks.find(m => m.studentId === st.id && m.examType === examType && isSameSubject(m.subject, sub));
+        const pracEt: ExamType | null = examType === 'Half-Yearly Exam' ? 'Half-Yearly Practical' : examType === 'Yearly Exam' ? 'Yearly Practical' : null;
+        const foundPrac = pracEt ? marks.find(m => m.studentId === st.id && m.examType === pracEt && isSameSubject(m.subject, sub)) : null;
+
+        const subHasPrac = isPracticalSubject(sub);
+        const defaultWrittenMax = isTest ? 10 : isExamTypePracticalOnly ? 30 : subHasPrac ? 60 : 80;
+        const defaultOralMax = isTest ? 0 : 20;
+        const defaultPracMax = subHasPrac ? 30 : 0;
+
         map[`${st.id}:::${sub}`] = {
           obt: found ? found.marksObtained : 0,
-          max: found ? found.maxMarks : defaultMax
+          max: found ? found.maxMarks : defaultWrittenMax,
+          oralObt: found?.oralMarks !== undefined ? found.oralMarks : 0,
+          oralMax: found?.oralMaxMarks !== undefined ? found.oralMaxMarks : defaultOralMax,
+          pracObt: found?.practicalMarks !== undefined ? found.practicalMarks : (foundPrac ? foundPrac.marksObtained : 0),
+          pracMax: found?.practicalMaxMarks !== undefined ? found.practicalMaxMarks : (foundPrac ? foundPrac.maxMarks : defaultPracMax)
         };
       });
     });
+
     setMatrixMarks(map);
     setIsMatrixSaved(false);
+
+    // Check if offline draft exists in localStorage
+    const draftKey = `edumanage_matrix_draft_${selectedClass}_${examType}`;
+    try {
+      const stored = localStorage.getItem(draftKey);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && parsed.marks && Object.keys(parsed.marks).length > 0) {
+          setDraftInfo({
+            timestamp: parsed.timestamp || 'Previous Session',
+            count: Object.keys(parsed.marks).length,
+            pattern: parsed.pattern || 'written-oral'
+          });
+        } else {
+          setDraftInfo(null);
+        }
+      } else {
+        setDraftInfo(null);
+      }
+    } catch {
+      setDraftInfo(null);
+    }
   }, [selectedClass, examType, marks, subjects, classStudents, isExamTypePracticalOnly]);
+
+  // Debounced auto-save for Matrix
+  useEffect(() => {
+    if (activeMode !== 'class-matrix') return;
+    if (Object.keys(matrixMarks).length === 0) return;
+    
+    // Check if any mark entered is > 0
+    const hasAnyMarks = Object.values(matrixMarks).some((c: MatrixCellData) => (c.obt > 0 || (c.oralObt !== undefined && c.oralObt > 0) || (c.pracObt !== undefined && c.pracObt > 0)));
+    if (!hasAnyMarks) return;
+
+    const draftKey = `edumanage_matrix_draft_${selectedClass}_${examType}`;
+    const timer = setTimeout(() => {
+      try {
+        localStorage.setItem(draftKey, JSON.stringify({
+          marks: matrixMarks,
+          pattern: matrixPattern,
+          class: selectedClass,
+          examType,
+          timestamp: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })
+        }));
+        setAutoSaveNotice(`Auto-saved at ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`);
+      } catch (err) {
+        console.warn('Draft auto-save failed:', err);
+      }
+    }, 1200);
+
+    return () => clearTimeout(timer);
+  }, [matrixMarks, matrixPattern, selectedClass, examType, activeMode]);
 
   // -------------------------------------------------------------
   // MODE 4: ATTENDANCE LEDGER STATE
@@ -544,11 +672,23 @@ export function ExamResults() {
   };
 
   // -------------------------------------------------------------
-  // HELPERS & HANDLERS: CLASS MASTER GRID (MODE 3)
+  // HELPERS & HANDLERS: CLASS MASTER GRID & MULTI-COMPONENT MATRIX (MODE 3)
   // -------------------------------------------------------------
-  const handleMatrixChange = (stId: string, sub: string, field: 'obt' | 'max', val: number) => {
+  const handleMatrixChange = (
+    stId: string, 
+    sub: string, 
+    field: 'obt' | 'max' | 'oralObt' | 'oralMax' | 'pracObt' | 'pracMax', 
+    val: number
+  ) => {
     setMatrixMarks(prev => {
-      const cur = prev[`${stId}:::${sub}`] || { obt: 0, max: 100 };
+      const cur = prev[`${stId}:::${sub}`] || { 
+        obt: 0, 
+        max: 80, 
+        oralObt: 0, 
+        oralMax: 20, 
+        pracObt: 0, 
+        pracMax: 0 
+      };
       return {
         ...prev,
         [`${stId}:::${sub}`]: {
@@ -558,18 +698,111 @@ export function ExamResults() {
       };
     });
     setIsMatrixSaved(false);
+    setIsMatrixDraftSaved(false);
   };
 
-  const handleApplyMatrixBulkMaxMarks = (newMax: number) => {
-    setBulkMaxMarksInput(newMax);
+  // Bulk Apply Max Marks for Written / Paper 1 / Oral / Practical in 1 single click
+  const handleApplyMatrixBulkMaxMarks = (
+    field: 'max' | 'oralMax' | 'pracMax', 
+    newMax: number, 
+    targetSub?: string
+  ) => {
+    if (field === 'max') setBulkMatrixWrittenMax(newMax);
+    if (field === 'oralMax' || field === 'pracMax') setBulkMatrixOralPracMax(newMax);
+
     const updated = { ...matrixMarks };
     classStudents.forEach(st => {
-      subjects.forEach(sub => {
-        const cur = updated[`${st.id}:::${sub}`] || { obt: 0, max: newMax };
+      const subsToApply = targetSub && targetSub !== 'ALL' ? [targetSub] : subjects;
+      subsToApply.forEach(sub => {
+        const cur = updated[`${st.id}:::${sub}`] || { 
+          obt: 0, 
+          max: 80, 
+          oralObt: 0, 
+          oralMax: 20, 
+          pracObt: 0, 
+          pracMax: 0 
+        };
         updated[`${st.id}:::${sub}`] = {
           ...cur,
-          max: newMax
+          [field]: newMax
         };
+      });
+    });
+    setMatrixMarks(updated);
+    setIsMatrixSaved(false);
+    setIsMatrixDraftSaved(false);
+  };
+
+  // Explicit Save Draft Button (Local Storage Persistence)
+  const handleSaveMatrixDraft = () => {
+    const draftKey = `edumanage_matrix_draft_${selectedClass}_${examType}`;
+    const timeStr = new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' });
+    try {
+      localStorage.setItem(draftKey, JSON.stringify({
+        marks: matrixMarks,
+        pattern: matrixPattern,
+        class: selectedClass,
+        examType,
+        timestamp: timeStr
+      }));
+      setIsMatrixDraftSaved(true);
+      setAutoSaveNotice(`Draft Saved at ${new Date().toLocaleTimeString('en-IN')}`);
+      alert(`कक्षा ${selectedClass} (${examType}) का ड्राफ्ट सफलतापूर्वक सुरक्षित कर दिया गया है!\n\nयदि कंप्यूटर/ब्राउज़र बंद भी हो जाए, तो भी यह डेटा यहाँ सुरक्षित रहेगा।`);
+      setTimeout(() => setIsMatrixDraftSaved(false), 4000);
+    } catch (err) {
+      console.error('Failed to save matrix draft:', err);
+      alert('ड्राफ्ट सेव करने में त्रुटि हुई।');
+    }
+  };
+
+  // Restore Draft from Local Storage
+  const handleRestoreMatrixDraft = () => {
+    const draftKey = `edumanage_matrix_draft_${selectedClass}_${examType}`;
+    try {
+      const stored = localStorage.getItem(draftKey);
+      if (!stored) return;
+      const parsed = JSON.parse(stored);
+      if (parsed && parsed.marks) {
+        setMatrixMarks(parsed.marks);
+        if (parsed.pattern) setMatrixPattern(parsed.pattern);
+        setDraftInfo(null);
+        setIsMatrixSaved(false);
+        setAutoSaveNotice(`Restored from draft (${parsed.timestamp || 'Draft'})`);
+        alert('ड्राफ्ट से अंक सफलतापूर्वक लोड कर लिए गए हैं!');
+      }
+    } catch (err) {
+      console.error('Failed to restore draft:', err);
+      alert('ड्राफ्ट लोड करने में त्रुटि हुई।');
+    }
+  };
+
+  // Discard Draft
+  const handleDiscardMatrixDraft = () => {
+    if (!window.confirm('क्या आप वाकई इस सहेजे गए ड्राफ्ट को हटाना चाहते हैं?')) return;
+    const draftKey = `edumanage_matrix_draft_${selectedClass}_${examType}`;
+    localStorage.removeItem(draftKey);
+    setDraftInfo(null);
+  };
+
+  // Clear Matrix Marks for current view
+  const handleClearMatrixMarks = async () => {
+    const targetLabel = matrixSubjectFilter !== 'ALL' ? `"${matrixSubjectFilter}"` : `सम्पूर्ण कक्षा ${selectedClass}`;
+    if (!window.confirm(`क्या आप वाकई ${targetLabel} (${examType}) के ग्रिड के सभी अंक खाली / रीसेट करना चाहते हैं?`)) {
+      return;
+    }
+    const updated = { ...matrixMarks };
+    classStudents.forEach(st => {
+      const subsToReset = matrixSubjectFilter !== 'ALL' ? [matrixSubjectFilter] : subjects;
+      subsToReset.forEach(sub => {
+        const cur = updated[`${st.id}:::${sub}`];
+        if (cur) {
+          updated[`${st.id}:::${sub}`] = {
+            ...cur,
+            obt: 0,
+            oralObt: 0,
+            pracObt: 0
+          };
+        }
       });
     });
     setMatrixMarks(updated);
@@ -581,28 +814,96 @@ export function ExamResults() {
     setIsMatrixSaving(true);
     try {
       const marksToSave: Omit<ExamMark, 'id' | 'date' | 'schoolId'>[] = [];
+      const isTest = examType === 'Half-Yearly Test' || examType === 'Yearly Test';
 
       classStudents.forEach(st => {
         subjects.forEach(sub => {
           const cell = matrixMarks[`${st.id}:::${sub}`];
           if (cell) {
-            const defaultMax = (examType === 'Half-Yearly Test' || examType === 'Yearly Test') ? 10 : isExamTypePracticalOnly ? 30 : 90;
-            const isPrac = isExamTypePracticalOnly || isPracticalSubject(sub);
-            marksToSave.push({
-              studentId: st.id,
-              teacherId: currentUser?.id || 'admin',
-              examType,
-              subject: normalizeSubject(sub),
-              marksObtained: Number(cell.obt || 0),
-              maxMarks: Number(cell.max || defaultMax),
-              practicalMarks: isPrac ? Number(cell.obt || 0) : undefined,
-              practicalMaxMarks: isPrac ? Number(cell.max || defaultMax) : undefined
-            });
+            const subHasPrac = isPracticalSubject(sub);
+            const defaultTheoryMax = isTest ? 10 : isExamTypePracticalOnly ? 30 : subHasPrac ? 60 : 80;
+            const obtVal = Number(cell.obt || 0);
+            const maxVal = Number(cell.max || defaultTheoryMax);
+
+            const oralObt = cell.oralObt !== undefined ? Number(cell.oralObt) : undefined;
+            const oralMax = cell.oralMax !== undefined ? Number(cell.oralMax) : undefined;
+
+            const pracObt = cell.pracObt !== undefined ? Number(cell.pracObt) : undefined;
+            const pracMax = cell.pracMax !== undefined ? Number(cell.pracMax) : undefined;
+
+            if (matrixPattern === 'written-oral') {
+              marksToSave.push({
+                studentId: st.id,
+                teacherId: currentUser?.id || 'admin',
+                examType,
+                subject: normalizeSubject(sub),
+                marksObtained: obtVal,
+                maxMarks: maxVal,
+                oralMarks: oralObt,
+                oralMaxMarks: oralMax
+              });
+            } else if (matrixPattern === 'paper-i-ii') {
+              // Store Paper I in marksObtained, Paper II in practicalMarks/practicalMaxMarks
+              const p2Obt = oralObt !== undefined && oralObt > 0 ? oralObt : (pracObt || 0);
+              const p2Max = oralMax !== undefined && oralMax > 0 ? oralMax : (pracMax || (isTest ? 0 : 50));
+              marksToSave.push({
+                studentId: st.id,
+                teacherId: currentUser?.id || 'admin',
+                examType,
+                subject: normalizeSubject(sub),
+                marksObtained: obtVal,
+                maxMarks: maxVal,
+                practicalMarks: p2Obt,
+                practicalMaxMarks: p2Max
+              });
+            } else if (matrixPattern === 'written-prac') {
+              const pObt = pracObt !== undefined && pracObt > 0 ? pracObt : (oralObt || 0);
+              const pMax = pracMax !== undefined && pracMax > 0 ? pracMax : (oralMax || (subHasPrac ? 30 : 0));
+              marksToSave.push({
+                studentId: st.id,
+                teacherId: currentUser?.id || 'admin',
+                examType,
+                subject: normalizeSubject(sub),
+                marksObtained: obtVal,
+                maxMarks: maxVal,
+                practicalMarks: pObt,
+                practicalMaxMarks: pMax
+              });
+            } else if (matrixPattern === 'all-composite') {
+              marksToSave.push({
+                studentId: st.id,
+                teacherId: currentUser?.id || 'admin',
+                examType,
+                subject: normalizeSubject(sub),
+                marksObtained: obtVal,
+                maxMarks: maxVal,
+                oralMarks: oralObt,
+                oralMaxMarks: oralMax,
+                practicalMarks: pracObt,
+                practicalMaxMarks: pracMax
+              });
+            } else {
+              // written-only
+              marksToSave.push({
+                studentId: st.id,
+                teacherId: currentUser?.id || 'admin',
+                examType,
+                subject: normalizeSubject(sub),
+                marksObtained: obtVal,
+                maxMarks: maxVal
+              });
+            }
           }
         });
       });
 
       await importMarks(marksToSave);
+
+      // Clean up draft after successful DB save
+      const draftKey = `edumanage_matrix_draft_${selectedClass}_${examType}`;
+      localStorage.removeItem(draftKey);
+      setDraftInfo(null);
+
       setIsMatrixSaved(true);
       setTimeout(() => setIsMatrixSaved(false), 4000);
     } catch (err) {
@@ -826,21 +1127,84 @@ export function ExamResults() {
           </>
         )}
 
-        {/* Exam picker for Mode 3 */}
+        {/* Mode 3 Controls in Top Bar */}
         {activeMode === 'class-matrix' && (
-          <div className="w-52">
-            <Label className="font-bold text-slate-700 text-xs">Exam Scheme for Matrix</Label>
-            <Input 
-              as="select" 
-              value={examType} 
-              onChange={e => {
-                setExamType(e.target.value as ExamType);
-                setIsMatrixSaved(false);
-              }}
-            >
-              {examTypes.map(et => <option key={et} value={et}>{et}</option>)}
-            </Input>
-          </div>
+          <>
+            <div className="w-48">
+              <Label className="font-bold text-slate-700 text-xs">Exam Scheme for Matrix</Label>
+              <Input 
+                as="select" 
+                value={examType} 
+                onChange={e => {
+                  setExamType(e.target.value as ExamType);
+                  setIsMatrixSaved(false);
+                }}
+              >
+                {examTypes.map(et => <option key={et} value={et}>{et}</option>)}
+              </Input>
+            </div>
+
+            <div className="w-48">
+              <Label className="font-bold text-slate-700 text-xs flex items-center justify-between">
+                <span>Subject View</span>
+                {matrixSubjectFilter !== 'ALL' && (
+                  <button 
+                    type="button" 
+                    onClick={() => setMatrixSubjectFilter('ALL')}
+                    className="text-[10px] text-blue-600 hover:underline cursor-pointer"
+                  >
+                    Show All
+                  </button>
+                )}
+              </Label>
+              <Input 
+                as="select" 
+                value={matrixSubjectFilter} 
+                onChange={e => setMatrixSubjectFilter(e.target.value)}
+              >
+                <option value="ALL">🌟 All Subjects (सभी विषय)</option>
+                {subjects.map(sb => {
+                  const stat = matrixSubjectStats.find(s => isSameSubject(s.subject, sb));
+                  const isDone = stat?.isComplete;
+                  return (
+                    <option key={sb} value={sb}>
+                      {sb} {isDone ? '(पूर्ण ✓)' : `(${stat?.filledStudents || 0}/${stat?.totalStudents || 0})`}
+                    </option>
+                  );
+                })}
+              </Input>
+            </div>
+
+            <div className="w-52">
+              <Label className="font-bold text-slate-700 text-xs">Pattern / Format</Label>
+              <Input 
+                as="select" 
+                value={matrixPattern} 
+                onChange={e => setMatrixPattern(e.target.value as MatrixPattern)}
+              >
+                <option value="written-oral">📝 Written + Oral (लिखित + मौखिक)</option>
+                <option value="paper-i-ii">📑 Paper I + II (प्रथम + द्वितीय पत्र)</option>
+                <option value="written-prac">🧪 Written + Practical (लिखित + प्रायोगिक)</option>
+                <option value="written-only">✏️ Written Only (केवल लिखित)</option>
+                <option value="all-composite">🌟 All-in-One (Writ + Oral + Prac)</option>
+              </Input>
+            </div>
+
+            <div className="flex items-center gap-2 pb-1.5 self-end">
+              <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 cursor-pointer bg-slate-200/70 hover:bg-slate-200 px-3 py-2 rounded-lg transition-colors border border-slate-300">
+                <input 
+                  type="checkbox"
+                  checked={hideCompletedSubjects}
+                  onChange={e => setHideCompletedSubjects(e.target.checked)}
+                  className="rounded text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
+                />
+                <span className="flex items-center gap-1">
+                  {hideCompletedSubjects ? <EyeOff className="w-3.5 h-3.5 text-amber-600" /> : <Eye className="w-3.5 h-3.5 text-slate-500" />}
+                  Hide Completed ({completedSubjectsCount}/{subjects.length})
+                </span>
+              </label>
+            </div>
+          </>
         )}
 
         {/* Student picker for Mode 2 */}
@@ -1807,114 +2171,799 @@ export function ExamResults() {
       )}
 
       {/* ========================================================================= */}
-      {/* MODE 3: CLASS MASTER GRID (ALL STUDENTS & ALL SUBJECTS MATRIX)             */}
+      {/* ========================================================================= */}
+      {/* MODE 3: CLASS MASTER GRID & ALL SUBJECTS MATRIX                            */}
       {/* ========================================================================= */}
       {activeMode === 'class-matrix' && (
         <Card className="p-4 bg-white border border-slate-200 shadow-xs space-y-4">
-          {/* Header with Bulk Max Marks setter for Matrix */}
-          <div className="bg-slate-900 text-white p-3.5 rounded-xl shadow-xs flex flex-wrap justify-between items-center gap-3">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-600 rounded-lg text-white">
-                <Grid className="w-4 h-4" />
+          {/* Header Banner */}
+          <div className="bg-slate-900 text-white p-4 rounded-xl shadow-xs flex flex-wrap justify-between items-center gap-4">
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 bg-blue-600 rounded-lg text-white shadow-xs">
+                <Grid className="w-5 h-5" />
               </div>
               <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-white">
-                  Class Master Marks Matrix ({selectedClass} - {examType})
-                </h4>
-                <p className="text-[10.5px] text-slate-300">
-                  पूरी कक्षा के सभी विषयों के अंक एक साथ एक्सेल ग्रिड की तरह भरें।
+                <div className="flex flex-wrap items-center gap-2">
+                  <h4 className="text-sm font-black uppercase tracking-wider text-white">
+                    3. All Subjects Marks Matrix ({selectedClass})
+                  </h4>
+                  <span className="bg-blue-500/30 text-blue-200 border border-blue-400/40 text-[10.5px] font-bold px-2.5 py-0.5 rounded-full">
+                    {examType}
+                  </span>
+                  <span className="bg-slate-800 text-slate-300 text-[10.5px] font-bold px-2 py-0.5 rounded border border-slate-700">
+                    {classStudents.length} छात्र
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 mt-1">
+                  सम्पूर्ण कक्षा के सभी विषयों के लिखित (Written / Paper I), मौखिक (Oral / Paper II) व प्रायोगिक अंक एक्सेल ग्रिड की तरह भरें।
                 </p>
               </div>
             </div>
 
-            {/* Quick Bulk Max Marks */}
-            <div className="flex items-center gap-2 bg-slate-800 p-1.5 px-3 rounded-lg border border-slate-700">
-              <span className="text-xs font-bold text-slate-300">Set All Subjects Max:</span>
-              <div className="flex items-center gap-1">
-                {PRESET_MAX_MARKS.map(val => (
-                  <button
-                    key={val}
-                    type="button"
-                    onClick={() => handleApplyMatrixBulkMaxMarks(val)}
-                    className="bg-slate-700 hover:bg-blue-600 text-white text-[10px] font-bold px-2 py-0.5 rounded transition-all cursor-pointer"
-                  >
-                    {val}
-                  </button>
-                ))}
-              </div>
+            {/* Auto-Save & Manual Save Draft Actions */}
+            <div className="flex items-center gap-2.5">
+              {autoSaveNotice && (
+                <span className="text-[11px] font-mono text-emerald-400 bg-emerald-950/80 px-2.5 py-1 rounded-md border border-emerald-800 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                  {autoSaveNotice}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={handleSaveMatrixDraft}
+                className="bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 text-xs font-bold px-3 py-2 rounded-lg flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                title="ब्राउज़र/कंप्यूटर बंद होने पर भी डेटा सुरक्षित रहेगा"
+              >
+                <HardDrive className="w-3.5 h-3.5 text-amber-400" />
+                <span>Save Draft (ड्राफ्ट सुरक्षित करें)</span>
+              </button>
             </div>
           </div>
 
-          <div className="overflow-x-auto border border-slate-200 rounded-lg">
-            <table className="w-full text-left text-[11px] text-slate-600">
-              <thead className="bg-slate-50 uppercase text-[9px] font-extrabold text-slate-500 border-b border-slate-200">
-                <tr>
-                  <th className="px-3 py-2.5 w-14 sticky left-0 bg-slate-50 z-10">Roll</th>
-                  <th className="px-3 py-2.5 min-w-[140px] sticky left-14 bg-slate-50 z-10 border-r">Student Name</th>
-                  {subjects.map(sub => (
-                    <th key={sub} className="px-3 py-2.5 text-center min-w-[90px] border-r">
-                      <span className="block truncate">{sub}</span>
-                      <span className="block text-[8px] text-slate-400 font-normal">Obt / Max</span>
-                    </th>
+          {/* Draft Recovery Alert Banner */}
+          {draftInfo && (
+            <div className="bg-amber-50 border-2 border-amber-300 text-amber-900 p-3 rounded-xl flex flex-wrap items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-center gap-2.5">
+                <Bookmark className="w-5 h-5 text-amber-600 shrink-0" />
+                <div>
+                  <div className="text-xs font-bold flex items-center gap-2">
+                    <span>📌 इस कक्षा का सहेजा गया ड्राफ्ट (Unsaved Draft) उपलब्ध है!</span>
+                    <span className="text-[11px] bg-amber-200 text-amber-800 px-2 py-0.5 rounded font-mono">
+                      {draftInfo.timestamp} ({draftInfo.count} प्रविष्टियां)
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-amber-700">
+                    यदि सिस्टम बंद हो गया था तो आप पिछले ड्राफ्ट को लोड करके वहीं से कार्य जारी रख सकते हैं।
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  onClick={handleRestoreMatrixDraft}
+                  className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Restore Draft (लोड करें)</span>
+                </Button>
+                <button
+                  type="button"
+                  onClick={handleDiscardMatrixDraft}
+                  className="bg-white hover:bg-amber-100 text-amber-800 border border-amber-300 text-xs font-bold px-3 py-1.5 rounded-lg cursor-pointer transition-colors"
+                >
+                  Discard (हटाएं)
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Pattern & Subject Filter Bar */}
+          <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-3">
+            {/* Top Row: Pattern Tabs & Hide Completed Toggle */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs font-black text-slate-700 mr-1 flex items-center gap-1">
+                  <Sliders className="w-3.5 h-3.5 text-blue-600" /> परीक्षा पैटर्न:
+                </span>
+                {[
+                  { id: 'written-oral', label: '📝 लिखित + मौखिक (Writ + Oral)', desc: 'लिखित एवं मौखिक अंक अलग-अलग' },
+                  { id: 'paper-i-ii', label: '📑 प्रथम + द्वितीय पत्र (Paper I + II)', desc: 'Paper I एवं Paper II' },
+                  { id: 'written-prac', label: '🧪 लिखित + प्रायोगिक (Writ + Prac)', desc: 'लिखित एवं प्रैक्टिकल' },
+                  { id: 'written-only', label: '✏️ केवल लिखित (Written Only)', desc: 'एकल लिखित अंक' },
+                  { id: 'all-composite', label: '🌟 समग्र (All-in-One)', desc: 'लिखित + मौखिक + प्रायोगिक' }
+                ].map(p => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setMatrixPattern(p.id as MatrixPattern)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      matrixPattern === p.id
+                        ? 'bg-blue-600 text-white shadow-sm ring-2 ring-blue-300'
+                        : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                    }`}
+                    title={p.desc}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Hide Completed Subjects Toggle */}
+              <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer bg-white px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 shadow-xs">
+                <input
+                  type="checkbox"
+                  checked={hideCompletedSubjects}
+                  onChange={e => setHideCompletedSubjects(e.target.checked)}
+                  className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4"
+                />
+                <span className="flex items-center gap-1.5">
+                  {hideCompletedSubjects ? (
+                    <EyeOff className="w-4 h-4 text-amber-600" />
+                  ) : (
+                    <Eye className="w-4 h-4 text-slate-500" />
+                  )}
+                  <span>पूर्ण विषय छुपाएं (Hide Completed)</span>
+                  <span className="bg-slate-100 text-slate-600 text-[10.5px] px-1.5 py-0.5 rounded font-mono">
+                    {completedSubjectsCount}/{subjects.length} पूर्ण
+                  </span>
+                </span>
+              </label>
+            </div>
+
+            {/* Subject Selection Tabs with Progress */}
+            <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-200">
+              <span className="text-xs font-black text-slate-700 mr-1 flex items-center gap-1">
+                <BookOpen className="w-3.5 h-3.5 text-indigo-600" /> विषय चुनें (Subject Focus):
+              </span>
+              <button
+                type="button"
+                onClick={() => setMatrixSubjectFilter('ALL')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  matrixSubjectFilter === 'ALL'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                🌟 सभी विषय ({visibleMatrixSubjects.length}/{subjects.length})
+              </button>
+              {subjects.map(sb => {
+                const stat = matrixSubjectStats.find(s => isSameSubject(s.subject, sb));
+                const isComplete = stat?.isComplete;
+                const isSelected = isSameSubject(matrixSubjectFilter, sb);
+                const isHidden = hideCompletedSubjects && isComplete;
+
+                if (isHidden && !isSelected) return null;
+
+                return (
+                  <button
+                    key={sb}
+                    type="button"
+                    onClick={() => setMatrixSubjectFilter(sb)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : isComplete
+                        ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100'
+                        : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span>{sb}</span>
+                    {isComplete ? (
+                      <span className="bg-emerald-600 text-white text-[9px] px-1 py-0.2 rounded font-black flex items-center">
+                        ✓
+                      </span>
+                    ) : (
+                      <span className="text-[10px] opacity-75 font-mono">
+                        ({stat?.filledStudents || 0}/{stat?.totalStudents || 0})
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 1-Click Single-Click Max Marks Presets Tool */}
+          <div className="bg-slate-900 text-white p-3 rounded-xl shadow-xs flex flex-wrap justify-between items-center gap-3">
+            <div className="flex flex-wrap items-center gap-4">
+              {/* Written / Paper I Max Presets */}
+              <div className="flex items-center gap-2 bg-slate-800 p-1.5 px-2.5 rounded-lg border border-slate-700">
+                <span className="text-xs font-bold text-blue-300 flex items-center gap-1">
+                  <Sliders className="w-3 h-3 text-blue-400" />
+                  {matrixPattern === 'paper-i-ii' ? 'Paper I Max:' : 'लिखित (Written) Max:'}
+                </span>
+                <div className="flex items-center gap-1">
+                  {[10, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100].map(val => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => handleApplyMatrixBulkMaxMarks('max', val, matrixSubjectFilter)}
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded transition-all cursor-pointer ${
+                        bulkMatrixWrittenMax === val
+                          ? 'bg-blue-600 text-white shadow-xs font-black ring-1 ring-blue-300'
+                          : 'bg-slate-700 hover:bg-blue-500 text-slate-200'
+                      }`}
+                    >
+                      {val}
+                    </button>
                   ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredStudents.map(st => (
-                  <tr key={st.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-3 py-2 font-mono font-bold text-slate-700 sticky left-0 bg-white z-10">
-                      {st.rollNo || '-'}
-                    </td>
-                    <td className="px-3 py-2 font-black text-slate-800 text-xs sticky left-14 bg-white z-10 border-r truncate max-w-[160px]">
-                      {st.name}
-                    </td>
-                    {subjects.map(sub => {
-                      const cell = matrixMarks[`${st.id}:::${sub}`] || { obt: 0, max: (examType === 'Half-Yearly Test' || examType === 'Yearly Test') ? 10 : 90 };
+                </div>
+                <div className="flex items-center gap-1 pl-1 border-l border-slate-700">
+                  <input
+                    type="number"
+                    min="1"
+                    value={bulkMatrixWrittenMax}
+                    onChange={e => setBulkMatrixWrittenMax(Number(e.target.value))}
+                    className="w-10 text-center text-xs font-mono font-bold bg-slate-950 text-white rounded p-0.5 border border-slate-600 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleApplyMatrixBulkMaxMarks('max', bulkMatrixWrittenMax, matrixSubjectFilter)}
+                    className="bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold px-2 py-1 rounded cursor-pointer"
+                  >
+                    Apply All
+                  </button>
+                </div>
+              </div>
+
+              {/* Oral / Paper II / Practical Max Presets (when applicable) */}
+              {matrixPattern !== 'written-only' && (
+                <div className="flex items-center gap-2 bg-slate-800 p-1.5 px-2.5 rounded-lg border border-slate-700">
+                  <span className="text-xs font-bold text-amber-300 flex items-center gap-1">
+                    <FlaskConical className="w-3 h-3 text-amber-400" />
+                    {matrixPattern === 'paper-i-ii'
+                      ? 'Paper II Max:'
+                      : matrixPattern === 'written-prac'
+                      ? 'प्रायोगिक (Prac) Max:'
+                      : 'मौखिक (Oral) Max:'}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    {[10, 15, 20, 25, 30, 40, 50].map(val => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => handleApplyMatrixBulkMaxMarks('oralMax', val, matrixSubjectFilter)}
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded transition-all cursor-pointer ${
+                          bulkMatrixOralPracMax === val
+                            ? 'bg-amber-600 text-white shadow-xs font-black ring-1 ring-amber-300'
+                            : 'bg-slate-700 hover:bg-amber-500 text-slate-200'
+                        }`}
+                      >
+                        {val}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-1 pl-1 border-l border-slate-700">
+                    <input
+                      type="number"
+                      min="1"
+                      value={bulkMatrixOralPracMax}
+                      onChange={e => setBulkMatrixOralPracMax(Number(e.target.value))}
+                      className="w-10 text-center text-xs font-mono font-bold bg-slate-950 text-white rounded p-0.5 border border-slate-600 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleApplyMatrixBulkMaxMarks('oralMax', bulkMatrixOralPracMax, matrixSubjectFilter)}
+                      className="bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold px-2 py-1 rounded cursor-pointer"
+                    >
+                      Apply All
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Quick Status Note */}
+            <div className="text-[10.5px] text-slate-300">
+              {matrixSubjectFilter !== 'ALL' ? (
+                <span className="text-amber-300 font-bold">फ़िल्टर: केवल "{matrixSubjectFilter}"</span>
+              ) : (
+                <span>1-क्लिक में सभी विषयों के पूर्णांक (Max Marks) सेट करें</span>
+              )}
+            </div>
+          </div>
+
+          {/* If all subjects completed and hidden */}
+          {visibleMatrixSubjects.length === 0 ? (
+            <div className="p-8 text-center bg-emerald-50 border-2 border-dashed border-emerald-300 rounded-xl space-y-3">
+              <CheckCircle2 className="w-12 h-12 text-emerald-600 mx-auto" />
+              <h4 className="text-base font-bold text-emerald-900">
+                🎉 बधाई! कक्षा {selectedClass} के सभी {subjects.length} विषयों के अंक पूर्ण रूप से भरे जा चुके हैं!
+              </h4>
+              <p className="text-xs text-emerald-700">
+                'पूर्ण विषय छुपाएं' विकल्प सक्रिय होने के कारण सभी पूर्ण विषय छुपे हुए हैं। देखने या संशोधन के लिए नीचे क्लिक करें:
+              </p>
+              <Button
+                type="button"
+                onClick={() => setHideCompletedSubjects(false)}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-lg cursor-pointer"
+              >
+                सभी विषय दिखाएं (Show All Subjects)
+              </Button>
+            </div>
+          ) : (
+            /* Matrix Grid Table */
+            <div className="overflow-x-auto border border-slate-200 rounded-lg shadow-xs max-h-[70vh]">
+              <table className="w-full text-left text-[11px] text-slate-600 border-collapse">
+                <thead className="bg-slate-100 uppercase text-[9px] font-extrabold text-slate-700 border-b border-slate-300 sticky top-0 z-20">
+                  {/* Top Header Row for Subject Groups */}
+                  <tr>
+                    <th className="px-3 py-2 w-14 sticky left-0 bg-slate-100 z-30 border-r border-slate-200" rowSpan={2}>
+                      Roll
+                    </th>
+                    <th className="px-3 py-2 min-w-[150px] sticky left-14 bg-slate-100 z-30 border-r border-slate-300" rowSpan={2}>
+                      Student Name
+                    </th>
+                    {visibleMatrixSubjects.map(sub => {
+                      const stat = matrixSubjectStats.find(s => isSameSubject(s.subject, sub));
+                      const isComplete = stat?.isComplete;
+                      const colSpan = matrixPattern === 'all-composite' ? 4 : matrixPattern === 'written-only' ? 1 : 3;
+
                       return (
-                        <td key={sub} className="px-2 py-1.5 text-center border-r bg-slate-50/30">
-                          <div className="flex items-center justify-center gap-1">
-                            <input
-                              type="number"
-                              min="0"
-                              max={cell.max}
-                              value={cell.obt}
-                              onChange={e => handleMatrixChange(st.id, sub, 'obt', Number(e.target.value))}
-                              className="w-11 text-center font-mono font-bold text-xs border border-slate-300 rounded py-0.5 bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            />
-                            <span className="text-slate-400 text-[10px]">/</span>
-                            <input
-                              type="number"
-                              min="1"
-                              value={cell.max}
-                              onChange={e => handleMatrixChange(st.id, sub, 'max', Number(e.target.value))}
-                              className="w-9 text-center font-mono text-[9.5px] border border-slate-200 rounded py-0.5 bg-slate-100 text-slate-600 focus:outline-none"
-                            />
+                        <th
+                          key={sub}
+                          colSpan={colSpan}
+                          className={`px-3 py-1.5 text-center border-r border-slate-300 ${
+                            isComplete ? 'bg-emerald-100/70 text-emerald-950' : 'bg-slate-100 text-slate-800'
+                          }`}
+                        >
+                          <div className="flex items-center justify-center gap-1.5">
+                            <span className="font-black text-[11px]">{sub}</span>
+                            {isComplete && (
+                              <span className="bg-emerald-600 text-white text-[8px] px-1 py-0.2 rounded font-black">
+                                ✓
+                              </span>
+                            )}
                           </div>
-                        </td>
+                        </th>
+                      );
+                    })}
+                    <th className="px-3 py-2 text-center w-20 bg-slate-200 text-slate-800 border-l border-slate-300" rowSpan={2}>
+                      Total / %
+                    </th>
+                  </tr>
+
+                  {/* Sub Header Row for Components */}
+                  <tr className="bg-slate-50 text-[8.5px] font-bold text-slate-600 border-b border-slate-200">
+                    {visibleMatrixSubjects.map(sub => {
+                      if (matrixPattern === 'written-oral') {
+                        return (
+                          <React.Fragment key={`${sub}-subcols`}>
+                            <th className="px-1.5 py-1 text-center min-w-[65px] bg-blue-50/50 text-blue-900 border-r border-slate-200">
+                              लिखित (Writ)
+                            </th>
+                            <th className="px-1.5 py-1 text-center min-w-[65px] bg-amber-50/50 text-amber-900 border-r border-slate-200">
+                              मौखिक (Oral)
+                            </th>
+                            <th className="px-1.5 py-1 text-center min-w-[50px] bg-slate-100 text-slate-700 border-r border-slate-300">
+                              कुल (Total)
+                            </th>
+                          </React.Fragment>
+                        );
+                      }
+                      if (matrixPattern === 'paper-i-ii') {
+                        return (
+                          <React.Fragment key={`${sub}-subcols`}>
+                            <th className="px-1.5 py-1 text-center min-w-[65px] bg-blue-50/50 text-blue-900 border-r border-slate-200">
+                              प्रथम (Paper I)
+                            </th>
+                            <th className="px-1.5 py-1 text-center min-w-[65px] bg-purple-50/50 text-purple-900 border-r border-slate-200">
+                              द्वितीय (Paper II)
+                            </th>
+                            <th className="px-1.5 py-1 text-center min-w-[50px] bg-slate-100 text-slate-700 border-r border-slate-300">
+                              कुल (Total)
+                            </th>
+                          </React.Fragment>
+                        );
+                      }
+                      if (matrixPattern === 'written-prac') {
+                        return (
+                          <React.Fragment key={`${sub}-subcols`}>
+                            <th className="px-1.5 py-1 text-center min-w-[65px] bg-blue-50/50 text-blue-900 border-r border-slate-200">
+                              लिखित (Theory)
+                            </th>
+                            <th className="px-1.5 py-1 text-center min-w-[65px] bg-amber-50/50 text-amber-900 border-r border-slate-200">
+                              प्रायोगिक (Prac)
+                            </th>
+                            <th className="px-1.5 py-1 text-center min-w-[50px] bg-slate-100 text-slate-700 border-r border-slate-300">
+                              कुल (Total)
+                            </th>
+                          </React.Fragment>
+                        );
+                      }
+                      if (matrixPattern === 'all-composite') {
+                        return (
+                          <React.Fragment key={`${sub}-subcols`}>
+                            <th className="px-1 py-1 text-center min-w-[55px] bg-blue-50/50 text-blue-900 border-r border-slate-200">
+                              लिखित
+                            </th>
+                            <th className="px-1 py-1 text-center min-w-[55px] bg-purple-50/50 text-purple-900 border-r border-slate-200">
+                              मौखिक
+                            </th>
+                            <th className="px-1 py-1 text-center min-w-[55px] bg-amber-50/50 text-amber-900 border-r border-slate-200">
+                              प्रायोगिक
+                            </th>
+                            <th className="px-1 py-1 text-center min-w-[45px] bg-slate-100 text-slate-700 border-r border-slate-300">
+                              कुल
+                            </th>
+                          </React.Fragment>
+                        );
+                      }
+                      return (
+                        <th key={`${sub}-subcols`} className="px-2 py-1 text-center min-w-[85px] border-r border-slate-300">
+                          प्राप्तांक / पूर्णांक (Obt / Max)
+                        </th>
                       );
                     })}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
 
-          <div className="flex flex-wrap justify-between items-center border-t border-slate-100 pt-3 gap-3">
-            <span className="text-[10.5px] text-slate-500 italic">
-              * सम्पूर्ण कक्षा के सभी विषयों के अंक एक साथ बैच मोड में सेव होंगे।
-            </span>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredStudents.map(st => {
+                    let studentRowTotalObt = 0;
+                    let studentRowTotalMax = 0;
+
+                    return (
+                      <tr key={st.id} className="hover:bg-blue-50/40 transition-colors group">
+                        {/* Roll No */}
+                        <td className="px-3 py-1.5 font-mono font-bold text-slate-700 sticky left-0 bg-white group-hover:bg-blue-50/40 z-10 border-r border-slate-200 text-center">
+                          {st.rollNo || '-'}
+                        </td>
+
+                        {/* Student Name */}
+                        <td className="px-3 py-1.5 font-black text-slate-800 text-xs sticky left-14 bg-white group-hover:bg-blue-50/40 z-10 border-r border-slate-300 truncate max-w-[170px]">
+                          <div className="flex flex-col">
+                            <span className="truncate">{st.name}</span>
+                            <span className="text-[9.5px] font-normal text-slate-400">
+                              SR: {st.srNo || '-'} {st.fatherName ? `| ${st.fatherName}` : ''}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Subject Input Cells */}
+                        {visibleMatrixSubjects.map(sub => {
+                          const cell = matrixMarks[`${st.id}:::${sub}`] || { 
+                            obt: 0, 
+                            max: 80, 
+                            oralObt: 0, 
+                            oralMax: 20, 
+                            pracObt: 0, 
+                            pracMax: 0 
+                          };
+
+                          const writObt = Number(cell.obt || 0);
+                          const writMax = Number(cell.max || 80);
+                          const oralObt = Number(cell.oralObt || 0);
+                          const oralMax = Number(cell.oralMax || 20);
+                          const pracObt = Number(cell.pracObt || 0);
+                          const pracMax = Number(cell.pracMax || 0);
+
+                          let cellTotalObt = 0;
+                          let cellTotalMax = 0;
+
+                          if (matrixPattern === 'written-oral') {
+                            cellTotalObt = writObt + oralObt;
+                            cellTotalMax = writMax + oralMax;
+                          } else if (matrixPattern === 'paper-i-ii') {
+                            cellTotalObt = writObt + (oralObt > 0 ? oralObt : pracObt);
+                            cellTotalMax = writMax + (oralMax > 0 ? oralMax : (pracMax > 0 ? pracMax : 50));
+                          } else if (matrixPattern === 'written-prac') {
+                            cellTotalObt = writObt + (pracObt > 0 ? pracObt : oralObt);
+                            cellTotalMax = writMax + (pracMax > 0 ? pracMax : oralMax);
+                          } else if (matrixPattern === 'all-composite') {
+                            cellTotalObt = writObt + oralObt + pracObt;
+                            cellTotalMax = writMax + oralMax + pracMax;
+                          } else {
+                            cellTotalObt = writObt;
+                            cellTotalMax = writMax;
+                          }
+
+                          studentRowTotalObt += cellTotalObt;
+                          studentRowTotalMax += cellTotalMax;
+
+                          if (matrixPattern === 'written-oral') {
+                            return (
+                              <React.Fragment key={`${st.id}-${sub}`}>
+                                {/* Written Input */}
+                                <td className="px-1.5 py-1 text-center border-r border-slate-200 bg-blue-50/20">
+                                  <div className="flex items-center justify-center gap-0.5">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max={writMax}
+                                      value={writObt}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'obt', Number(e.target.value))}
+                                      className="w-10 text-center font-mono font-bold text-xs border border-slate-300 rounded py-0.5 bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    />
+                                    <span className="text-slate-400 text-[9px]">/</span>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      value={writMax}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'max', Number(e.target.value))}
+                                      className="w-8 text-center font-mono text-[9px] border border-slate-200 rounded py-0.5 bg-slate-100 text-slate-500 focus:outline-none"
+                                    />
+                                  </div>
+                                </td>
+
+                                {/* Oral Input */}
+                                <td className="px-1.5 py-1 text-center border-r border-slate-200 bg-amber-50/20">
+                                  <div className="flex items-center justify-center gap-0.5">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max={oralMax}
+                                      value={oralObt}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'oralObt', Number(e.target.value))}
+                                      className="w-10 text-center font-mono font-bold text-xs border border-amber-300 rounded py-0.5 bg-white text-amber-950 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                    />
+                                    <span className="text-slate-400 text-[9px]">/</span>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      value={oralMax}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'oralMax', Number(e.target.value))}
+                                      className="w-8 text-center font-mono text-[9px] border border-slate-200 rounded py-0.5 bg-amber-50 text-amber-700 focus:outline-none"
+                                    />
+                                  </div>
+                                </td>
+
+                                {/* Total Sum Badge */}
+                                <td className="px-1.5 py-1 text-center border-r border-slate-300 bg-slate-50">
+                                  <span className={`font-mono font-black text-xs ${cellTotalObt > 0 ? 'text-slate-800' : 'text-slate-400'}`}>
+                                    {cellTotalObt}
+                                  </span>
+                                </td>
+                              </React.Fragment>
+                            );
+                          }
+
+                          if (matrixPattern === 'paper-i-ii') {
+                            return (
+                              <React.Fragment key={`${st.id}-${sub}`}>
+                                {/* Paper I Input */}
+                                <td className="px-1.5 py-1 text-center border-r border-slate-200 bg-blue-50/20">
+                                  <div className="flex items-center justify-center gap-0.5">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max={writMax}
+                                      value={writObt}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'obt', Number(e.target.value))}
+                                      className="w-10 text-center font-mono font-bold text-xs border border-blue-300 rounded py-0.5 bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    />
+                                    <span className="text-slate-400 text-[9px]">/</span>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      value={writMax}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'max', Number(e.target.value))}
+                                      className="w-8 text-center font-mono text-[9px] border border-slate-200 rounded py-0.5 bg-slate-100 text-slate-500 focus:outline-none"
+                                    />
+                                  </div>
+                                </td>
+
+                                {/* Paper II Input */}
+                                <td className="px-1.5 py-1 text-center border-r border-slate-200 bg-purple-50/20">
+                                  <div className="flex items-center justify-center gap-0.5">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max={oralMax}
+                                      value={oralObt}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'oralObt', Number(e.target.value))}
+                                      className="w-10 text-center font-mono font-bold text-xs border border-purple-300 rounded py-0.5 bg-white text-purple-950 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                                    />
+                                    <span className="text-slate-400 text-[9px]">/</span>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      value={oralMax}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'oralMax', Number(e.target.value))}
+                                      className="w-8 text-center font-mono text-[9px] border border-slate-200 rounded py-0.5 bg-purple-50 text-purple-700 focus:outline-none"
+                                    />
+                                  </div>
+                                </td>
+
+                                {/* Total Badge */}
+                                <td className="px-1.5 py-1 text-center border-r border-slate-300 bg-slate-50">
+                                  <span className={`font-mono font-black text-xs ${cellTotalObt > 0 ? 'text-slate-800' : 'text-slate-400'}`}>
+                                    {cellTotalObt}
+                                  </span>
+                                </td>
+                              </React.Fragment>
+                            );
+                          }
+
+                          if (matrixPattern === 'written-prac') {
+                            return (
+                              <React.Fragment key={`${st.id}-${sub}`}>
+                                {/* Theory Input */}
+                                <td className="px-1.5 py-1 text-center border-r border-slate-200 bg-blue-50/20">
+                                  <div className="flex items-center justify-center gap-0.5">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max={writMax}
+                                      value={writObt}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'obt', Number(e.target.value))}
+                                      className="w-10 text-center font-mono font-bold text-xs border border-blue-300 rounded py-0.5 bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    />
+                                    <span className="text-slate-400 text-[9px]">/</span>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      value={writMax}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'max', Number(e.target.value))}
+                                      className="w-8 text-center font-mono text-[9px] border border-slate-200 rounded py-0.5 bg-slate-100 text-slate-500 focus:outline-none"
+                                    />
+                                  </div>
+                                </td>
+
+                                {/* Practical Input */}
+                                <td className="px-1.5 py-1 text-center border-r border-slate-200 bg-amber-50/20">
+                                  <div className="flex items-center justify-center gap-0.5">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max={pracMax}
+                                      value={pracObt}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'pracObt', Number(e.target.value))}
+                                      className="w-10 text-center font-mono font-bold text-xs border border-amber-300 rounded py-0.5 bg-white text-amber-950 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                    />
+                                    <span className="text-slate-400 text-[9px]">/</span>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      value={pracMax}
+                                      onChange={e => handleMatrixChange(st.id, sub, 'pracMax', Number(e.target.value))}
+                                      className="w-8 text-center font-mono text-[9px] border border-slate-200 rounded py-0.5 bg-amber-50 text-amber-700 focus:outline-none"
+                                    />
+                                  </div>
+                                </td>
+
+                                {/* Total Badge */}
+                                <td className="px-1.5 py-1 text-center border-r border-slate-300 bg-slate-50">
+                                  <span className={`font-mono font-black text-xs ${cellTotalObt > 0 ? 'text-slate-800' : 'text-slate-400'}`}>
+                                    {cellTotalObt}
+                                  </span>
+                                </td>
+                              </React.Fragment>
+                            );
+                          }
+
+                          if (matrixPattern === 'all-composite') {
+                            return (
+                              <React.Fragment key={`${st.id}-${sub}`}>
+                                <td className="px-1 py-1 text-center border-r border-slate-200 bg-blue-50/20">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max={writMax}
+                                    value={writObt}
+                                    onChange={e => handleMatrixChange(st.id, sub, 'obt', Number(e.target.value))}
+                                    className="w-9 text-center font-mono font-bold text-xs border border-blue-300 rounded py-0.5 bg-white text-slate-900 focus:outline-none"
+                                  />
+                                </td>
+                                <td className="px-1 py-1 text-center border-r border-slate-200 bg-purple-50/20">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max={oralMax}
+                                    value={oralObt}
+                                    onChange={e => handleMatrixChange(st.id, sub, 'oralObt', Number(e.target.value))}
+                                    className="w-9 text-center font-mono font-bold text-xs border border-purple-300 rounded py-0.5 bg-white text-purple-900 focus:outline-none"
+                                  />
+                                </td>
+                                <td className="px-1 py-1 text-center border-r border-slate-200 bg-amber-50/20">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max={pracMax}
+                                    value={pracObt}
+                                    onChange={e => handleMatrixChange(st.id, sub, 'pracObt', Number(e.target.value))}
+                                    className="w-9 text-center font-mono font-bold text-xs border border-amber-300 rounded py-0.5 bg-white text-amber-900 focus:outline-none"
+                                  />
+                                </td>
+                                <td className="px-1 py-1 text-center border-r border-slate-300 bg-slate-50">
+                                  <span className="font-mono font-black text-xs text-slate-800">
+                                    {cellTotalObt}
+                                  </span>
+                                </td>
+                              </React.Fragment>
+                            );
+                          }
+
+                          // written-only
+                          return (
+                            <td key={`${st.id}-${sub}`} className="px-2 py-1.5 text-center border-r border-slate-300 bg-slate-50/30">
+                              <div className="flex items-center justify-center gap-1">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max={writMax}
+                                  value={writObt}
+                                  onChange={e => handleMatrixChange(st.id, sub, 'obt', Number(e.target.value))}
+                                  className="w-11 text-center font-mono font-bold text-xs border border-slate-300 rounded py-0.5 bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                />
+                                <span className="text-slate-400 text-[10px]">/</span>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={writMax}
+                                  onChange={e => handleMatrixChange(st.id, sub, 'max', Number(e.target.value))}
+                                  className="w-9 text-center font-mono text-[9.5px] border border-slate-200 rounded py-0.5 bg-slate-100 text-slate-600 focus:outline-none"
+                                />
+                              </div>
+                            </td>
+                          );
+                        })}
+
+                        {/* Student Row Total / Percentage */}
+                        <td className="px-2 py-1 text-center bg-slate-100 border-l border-slate-300">
+                          <div className="flex flex-col items-center">
+                            <span className="font-mono font-bold text-xs text-blue-900">
+                              {studentRowTotalObt}
+                              <span className="text-[9px] font-normal text-slate-400">/{studentRowTotalMax}</span>
+                            </span>
+                            <span className="text-[9.5px] font-bold text-slate-600">
+                              {studentRowTotalMax > 0 ? `${((studentRowTotalObt / studentRowTotalMax) * 100).toFixed(1)}%` : '-'}
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Bottom Footer Actions */}
+          <div className="flex flex-wrap justify-between items-center border-t border-slate-200 pt-3.5 gap-3">
             <div className="flex items-center gap-3">
+              <span className="text-xs text-slate-500 italic">
+                * सम्पूर्ण कक्षा के सभी विषयों के अंक एक साथ डेटाबेस में सुरक्षित होंगे।
+              </span>
+              <button
+                type="button"
+                onClick={handleClearMatrixMarks}
+                className="text-xs font-bold text-red-600 hover:text-red-800 hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>ग्रिड रीसेट करें</span>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3">
+              {isMatrixDraftSaved && (
+                <span className="text-xs text-amber-700 font-bold flex items-center gap-1 bg-amber-50 px-3 py-1.5 border border-amber-300 rounded-lg shadow-xs">
+                  <Check className="w-4 h-4 text-amber-600" />
+                  <span>ड्राफ्ट सुरक्षित हो गया!</span>
+                </span>
+              )}
+
               {isMatrixSaved && (
                 <span className="text-xs text-emerald-700 font-bold flex items-center gap-1 bg-emerald-50 px-3 py-1.5 border border-emerald-300 rounded-lg shadow-xs">
                   <CheckCircle className="w-4 h-4 text-emerald-600" />
-                  <span>मास्टर ग्रिड के सभी अंक सफलतापूर्वक सुरक्षित हो गए!</span>
+                  <span>मास्टर ग्रिड के सभी अंक सफलतापूर्वक डेटाबेस में सुरक्षित हो गए!</span>
                 </span>
               )}
+
+              <button
+                type="button"
+                onClick={handleSaveMatrixDraft}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold px-4 py-2.5 rounded-lg border border-slate-300 shadow-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <HardDrive className="w-4 h-4 text-slate-600" />
+                <span>Save Draft (ड्राफ्ट सहेजें)</span>
+              </button>
+
               <Button
                 type="button"
                 onClick={handleSaveMatrixMarks}
                 disabled={isMatrixSaving}
-                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-7 py-2.5 rounded-lg shadow-md flex items-center gap-2 cursor-pointer"
+                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-6 py-2.5 rounded-lg shadow-md flex items-center gap-2 cursor-pointer"
               >
                 <Save className="w-4 h-4" />
                 <span>{isMatrixSaving ? 'सुरक्षित हो रहा है...' : `Save Complete Class Grid (${selectedClass})`}</span>
