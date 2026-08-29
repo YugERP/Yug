@@ -4,85 +4,27 @@ import { Card, Button, Label, Input } from '../UI';
 import { type Student, type ExamMark } from '../../types';
 import { Printer, Search, Award, FileText, ChevronRight, Eye } from 'lucide-react';
 import { isSameGrade, normalizeGrade, ALL_STANDARD_CLASSES, isSameSubject, isValidPhotoUrl, isPracticalSubject, isNurseryOrKg } from '../../utils/gradeHelper';
-
-const getSchoolNameStyle = (name: string, template: 'classic_portrait' | 'landscape_new') => {
-  const len = name.length;
-  let sizeInPx = 28;
-  
-  if (template === 'classic_portrait') {
-    if (len < 20) {
-      sizeInPx = 34;
-    } else if (len < 30) {
-      sizeInPx = 28;
-    } else if (len < 40) {
-      sizeInPx = 23;
-    } else if (len < 50) {
-      sizeInPx = 19;
-    } else {
-      sizeInPx = 16;
-    }
-  } else {
-    // landscape_new is wide, so we can make the school name much larger and prominent
-    if (len < 20) {
-      sizeInPx = 36;
-    } else if (len < 30) {
-      sizeInPx = 30;
-    } else if (len < 40) {
-      sizeInPx = 25;
-    } else if (len < 50) {
-      sizeInPx = 21;
-    } else {
-      sizeInPx = 18;
-    }
-  }
-  
-  return {
-    fontSize: `${sizeInPx}px`,
-    lineHeight: '1.2',
-  };
-};
-
-const getAddressStyle = (address: string, template: 'classic_portrait' | 'landscape_new') => {
-  const len = address.length;
-  let sizeInPx = 11;
-  
-  if (template === 'classic_portrait') {
-    if (len < 35) {
-      sizeInPx = 13;
-    } else if (len < 55) {
-      sizeInPx = 11;
-    } else {
-      sizeInPx = 9.5;
-    }
-  } else {
-    if (len < 35) {
-      sizeInPx = 11;
-    } else if (len < 55) {
-      sizeInPx = 9.5;
-    } else {
-      sizeInPx = 8.5;
-    }
-  }
-  
-  return {
-    fontSize: `${sizeInPx}px`,
-    lineHeight: '1.3',
-  };
-};
+import { type SubjectRowData } from '../reportCard/types';
+import { ClassicPortraitTemplate } from '../reportCard/ClassicPortraitTemplate';
+import { LandscapeProTemplate } from '../reportCard/LandscapeProTemplate';
+import { NurseryKgPortraitTemplate } from '../reportCard/NurseryKgPortraitTemplate';
+import { NurseryKgLandscapeTemplate } from '../reportCard/NurseryKgLandscapeTemplate';
 
 // Single Report Card Printable Sheet
 interface ReportCardSheetProps {
   student: Student;
-  selectedTemplate?: 'classic_portrait' | 'landscape_new' | 'nursery_kg';
+  selectedTemplate?: 'classic_portrait' | 'landscape_new' | 'nursery_kg' | 'nursery_kg_landscape';
+  brandColor: string;
 }
 
-function ReportCardPrintSheet({ student, selectedTemplate = 'classic_portrait' }: ReportCardSheetProps) {
+function ReportCardPrintSheet({ student, selectedTemplate = 'classic_portrait', brandColor }: ReportCardSheetProps) {
   const { marks, activeAcademicSession, schools, currentUser, attendances, students } = useStore();
+  const [photoLoadError, setPhotoLoadError] = useState(false);
 
   const currentSchool = schools.find(school => school.id === currentUser?.schoolId);
-  const brandColor = currentSchool?.reportCardColor || '#002060';
   const sessionToUse = student.academicSession || activeAcademicSession;
   const studentMarks = marks.filter(m => m.studentId === student.id);
+  const activePhoto = isValidPhotoUrl(student.photoUrl) ? student.photoUrl : (isValidPhotoUrl(student.docStudentPhoto) ? student.docStudentPhoto : null);
 
   const defaultSubjects = [
     'Hindi', 'English', 'Mathematics', 'Science', 'Social Science', 
@@ -130,140 +72,88 @@ function ReportCardPrintSheet({ student, selectedTemplate = 'classic_portrait' }
 
   const isSeniorGrade = ['Class 11', 'Class 12', '11th', '12th', '11', '12'].some(c => (student.grade || '').toLowerCase().includes(c.toLowerCase()));
 
-  const subjectRows = studentSubjects.map(subject => {
+  const subjectRows: SubjectRowData[] = studentSubjects.map(subject => {
     const isGradingOnly = isSeniorGrade && ['p.t.', 'p.t', 'physical education', 'pt', 'games', 'physical & health education'].includes(subject.toLowerCase().trim());
     const isSubjectPractical = isPracticalSubject(subject);
 
     const hyTest = studentMarks.find(m => isSameSubject(m.subject, subject) && m.examType === 'Half-Yearly Test');
     const hyExam = studentMarks.find(m => isSameSubject(m.subject, subject) && m.examType === 'Half-Yearly Exam');
-    const hyPracMark = studentMarks.find(m => isSameSubject(m.subject, subject) && (m.examType === 'Half-Yearly Practical' || m.examType === 'Practical Exam'));
+    const hyPrac = studentMarks.find(m => isSameSubject(m.subject, subject) && m.examType === 'Half-Yearly Practical');
 
     const yTest = studentMarks.find(m => isSameSubject(m.subject, subject) && m.examType === 'Yearly Test');
     const yExam = studentMarks.find(m => isSameSubject(m.subject, subject) && m.examType === 'Yearly Exam');
-    const yPracMark = studentMarks.find(m => isSameSubject(m.subject, subject) && (m.examType === 'Yearly Practical' || m.examType === 'Practical Exam'));
+    const yPrac = studentMarks.find(m => isSameSubject(m.subject, subject) && m.examType === 'Yearly Practical');
 
-    const hasHy = !!(hyTest || hyExam || hyPracMark);
-    const hasY = !!(yTest || yExam || yPracMark);
+    const hasHy = !!(hyTest || hyExam || hyPrac);
+    const hasY = !!(yTest || yExam || yPrac);
     const hasAny = hasHy || hasY;
 
-    // Component Obtained Values
+    // Half-yearly values
     const hyTestVal = hyTest ? hyTest.marksObtained : 0;
+    const hyTestMax = hyTest ? hyTest.maxMarks : 10;
+
+    const isHyPractical = isSubjectPractical || (hyExam && hyExam.practicalMaxMarks && hyExam.practicalMaxMarks > 0) || !!hyPrac;
     const hyExamVal = hyExam ? hyExam.marksObtained : 0;
-    const hyPracVal = (hyExam && hyExam.practicalMarks !== undefined && !isNaN(hyExam.practicalMarks)) 
-      ? hyExam.practicalMarks 
-      : (hyPracMark ? hyPracMark.marksObtained : 0);
+    const defaultHyTheoryMax = isHyPractical ? 60 : 90;
+    const hyExamMax = hyExam ? (hyExam.maxMarks ?? defaultHyTheoryMax) : defaultHyTheoryMax;
 
+    const hyPracVal = hyExam && hyExam.practicalMarksObtained !== undefined 
+      ? hyExam.practicalMarksObtained 
+      : (hyPrac ? hyPrac.marksObtained : 0);
+    const hyPracMax = hyExam && hyExam.practicalMaxMarks !== undefined 
+      ? hyExam.practicalMaxMarks 
+      : (hyPrac ? hyPrac.maxMarks : (isHyPractical ? 30 : 0));
+
+    const hyMax = hyTestMax + hyExamMax + (isHyPractical ? hyPracMax : 0);
+    const hyObt = hyTestVal + hyExamVal + (isHyPractical ? hyPracVal : 0);
+
+    // Yearly values
     const yTestVal = yTest ? yTest.marksObtained : 0;
+    const yTestMax = yTest ? yTest.maxMarks : 10;
+
+    const isYPractical = isSubjectPractical || (yExam && yExam.practicalMaxMarks && yExam.practicalMaxMarks > 0) || !!yPrac;
     const yExamVal = yExam ? yExam.marksObtained : 0;
-    const yPracVal = (yExam && yExam.practicalMarks !== undefined && !isNaN(yExam.practicalMarks)) 
-      ? yExam.practicalMarks 
-      : (yPracMark ? yPracMark.marksObtained : 0);
+    const defaultYTheoryMax = isYPractical ? 60 : 90;
+    const yExamMax = yExam ? (yExam.maxMarks ?? defaultYTheoryMax) : defaultYTheoryMax;
 
-    // Check if practical is applicable for this subject in HY / Yearly
-    const hasHyPracData = (hyExam && hyExam.practicalMarks !== undefined && hyExam.practicalMarks !== null) || 
-                          (hyExam && hyExam.practicalMaxMarks !== undefined && hyExam.practicalMaxMarks > 0) || 
-                          !!hyPracMark;
-    const hasYPracData = (yExam && yExam.practicalMarks !== undefined && yExam.practicalMarks !== null) || 
-                         (yExam && yExam.practicalMaxMarks !== undefined && yExam.practicalMaxMarks > 0) || 
-                         !!yPracMark;
+    const yPracVal = yExam && yExam.practicalMarksObtained !== undefined 
+      ? yExam.practicalMarksObtained 
+      : (yPrac ? yPrac.marksObtained : 0);
+    const yPracMax = yExam && yExam.practicalMaxMarks !== undefined 
+      ? yExam.practicalMaxMarks 
+      : (yPrac ? yPrac.maxMarks : (isYPractical ? 30 : 0));
 
-    const isHyPractical = hasHyPracData || isSubjectPractical;
-    const isYPractical = hasYPracData || isSubjectPractical;
+    const yMax = yTestMax + yExamMax + (isYPractical ? yPracMax : 0);
+    const yObt = yTestVal + yExamVal + (isYPractical ? yPracVal : 0);
 
-    // Dynamic Half-Yearly Max Marks
-    let hyTestMax = 0;
-    if (hyTest) {
-      hyTestMax = hyTest.maxMarks;
-    } else if (hasHy && !hyPracMark) {
-      hyTestMax = 10;
-    }
-
-    let hyExamMax = 0;
-    if (hyExam) {
-      hyExamMax = hyExam.maxMarks;
-    } else if (hasHy) {
-      hyExamMax = isHyPractical ? 60 : 90;
-    }
-
-    let hyPracMax = 0;
-    if (isHyPractical) {
-      if (hyExam && hyExam.practicalMaxMarks !== undefined && !isNaN(hyExam.practicalMaxMarks) && hyExam.practicalMaxMarks > 0) {
-        hyPracMax = hyExam.practicalMaxMarks;
-      } else if (hyPracMark && hyPracMark.maxMarks > 0) {
-        hyPracMax = hyPracMark.maxMarks;
-      } else if (hasHy) {
-        hyPracMax = (hyExamMax === 70) ? 20 : 30;
-      }
-    }
-
-    // Dynamic Yearly Max Marks
-    let yTestMax = 0;
-    if (yTest) {
-      yTestMax = yTest.maxMarks;
-    } else if (hasY && !yPracMark) {
-      yTestMax = 10;
-    }
-
-    let yExamMax = 0;
-    if (yExam) {
-      yExamMax = yExam.maxMarks;
-    } else if (hasY) {
-      yExamMax = isYPractical ? 60 : 90;
-    }
-
-    let yPracMax = 0;
-    if (isYPractical) {
-      if (yExam && yExam.practicalMaxMarks !== undefined && !isNaN(yExam.practicalMaxMarks) && yExam.practicalMaxMarks > 0) {
-        yPracMax = yExam.practicalMaxMarks;
-      } else if (yPracMark && yPracMark.maxMarks > 0) {
-        yPracMax = yPracMark.maxMarks;
-      } else if (hasY) {
-        yPracMax = (yExamMax === 70) ? 20 : 30;
-      }
-    }
-
-    // Dynamic Totals per row
-    const hyObt = hyTestVal + hyExamVal + hyPracVal;
-    const hyMax = hasHy ? (hyTestMax + hyExamMax + hyPracMax) : 0;
-
-    const yObt = yTestVal + yExamVal + yPracVal;
-    const yMax = hasY ? (yTestMax + yExamMax + yPracMax) : 0;
-
-    // Final Evaluation (adapts to whether one or both terms are active)
-    let finalObt = 0;
-    let finalMax = 0;
-    if (hasHy && hasY) {
-      finalObt = hyObt + yObt;
-      finalMax = hyMax + yMax;
-    } else if (hasY) {
-      finalObt = yObt;
-      finalMax = yMax;
-    } else if (hasHy) {
-      finalObt = hyObt;
-      finalMax = hyMax;
-    }
+    // Final total
+    const finalMax = (hasHy ? hyMax : 0) + (hasY ? yMax : 0);
+    const finalObt = (hasHy ? hyObt : 0) + (hasY ? yObt : 0);
 
     const percentage = finalMax > 0 ? (finalObt / finalMax) * 100 : 0;
-    const grade = hasAny ? getGradeFromPercentage(percentage) : '';
+    const grade = finalMax > 0 ? getGradeFromPercentage(percentage) : '-';
 
     if (!isGradingOnly) {
       if (hasHy) {
         totalHyTestObt += hyTestVal;
         totalHyExamObt += hyExamVal;
-        totalHyPracObt += hyPracVal;
+        totalHyPracObt += isHyPractical ? hyPracVal : 0;
         totalHyMax += hyMax;
         totalHyObt += hyObt;
       }
       if (hasY) {
         totalYTestObt += yTestVal;
         totalYExamObt += yExamVal;
-        totalYPracObt += yPracVal;
+        totalYPracObt += isYPractical ? yPracVal : 0;
         totalYMax += yMax;
         totalYObt += yObt;
       }
       totalFinalMax += finalMax;
       totalFinalObt += finalObt;
     }
+
+    const hasHyPracData = (hyExam && hyExam.practicalMarksObtained !== undefined) || !!hyPrac;
+    const hasYPracData = (yExam && yExam.practicalMarksObtained !== undefined) || !!yPrac;
 
     const hasHyPrac = isHyPractical && (hasHyPracData || (hasHy && hyPracMax > 0));
     const hasYPrac = isYPractical && (hasYPracData || (hasY && yPracMax > 0));
@@ -311,7 +201,7 @@ function ReportCardPrintSheet({ student, selectedTemplate = 'classic_portrait' }
   const passed = overallPercentage >= 33;
 
   const rank = (() => {
-    const classStudents = students.filter(s => s.grade === student.grade && s.schoolId === student.schoolId);
+    const classStudents = students.filter(s => !s.isDeleted && isSameGrade(s.grade, student.grade) && (!s.schoolId || !student.schoolId || s.schoolId === student.schoolId));
     if (classStudents.length <= 1) return '1 / 1';
     
     const scores = classStudents.map(s => {
@@ -334,590 +224,51 @@ function ReportCardPrintSheet({ student, selectedTemplate = 'classic_portrait' }
     : (studentAttendance.length > 0 ? studentAttendance.length : 220);
   const attendanceString = `${totalPresent} / ${totalDays}`;
 
-  const displayVal = (exists: boolean, val: number) => exists ? val : '';
+  const isLandscape = selectedTemplate === 'landscape_new' || selectedTemplate === 'nursery_kg_landscape';
+
+  const commonProps = {
+    student,
+    currentSchool,
+    sessionToUse,
+    subjectRows,
+    totalHyMax,
+    totalHyObt,
+    totalYMax,
+    totalYObt,
+    totalFinalMax,
+    totalFinalObt,
+    overallPercentage,
+    overallGrade,
+    remark,
+    passed,
+    rank,
+    attendanceString,
+    activePhoto,
+    photoLoadError,
+    setPhotoLoadError,
+    allowEditPhoto: false,
+  };
 
   return (
     <div 
-      className={`report-card-container print-container bg-white border-[6px] border-double border-[#002060] ${selectedTemplate === 'landscape_new' ? 'p-3 sm:p-4' : 'p-6 sm:p-8'} rounded-xl shadow-md relative overflow-hidden traditional-border font-serif mx-auto max-w-4xl text-slate-900 my-4 print:my-0 print:border-[6px] print:rounded-none print:shadow-none ${selectedTemplate === 'landscape_new' ? 'print:p-4' : 'print:p-8'}`}
+      className={`report-card-container print-container bg-white traditional-border border-[5px] border-double border-[#002060] ${isLandscape ? 'p-3 sm:p-4' : 'p-5 sm:p-6'} m-0 sm:m-2 rounded-xl shadow-lg relative overflow-hidden`}
       style={{ '--rc-color': brandColor } as React.CSSProperties}
     >
-      <style dangerouslySetInnerHTML={{__html: `
-        .report-card-container .text-\\[\\#002060\\] {
-          color: var(--rc-color, #002060) !important;
-        }
-        .report-card-container .border-\\[\\#002060\\] {
-          border-color: var(--rc-color, #002060) !important;
-        }
-        .report-card-container .bg-\\[\\#002060\\] {
-          background-color: var(--rc-color, #002060) !important;
-        }
-        .report-card-container .divide-\\[\\#002060\\] > * + * {
-          border-color: var(--rc-color, #002060) !important;
-        }
-        .report-card-container .border-t-\\[\\#002060\\] {
-          border-top-color: var(--rc-color, #002060) !important;
-        }
-        .report-card-container .border-b-\\[\\#002060\\] {
-          border-bottom-color: var(--rc-color, #002060) !important;
-        }
-        .report-card-container .border-r-\\[\\#002060\\] {
-          border-right-color: var(--rc-color, #002060) !important;
-        }
-        .report-card-container .border-l-\\[\\#002060\\] {
-          border-left-color: var(--rc-color, #002060) !important;
-        }
-        .report-card-container.traditional-border, 
-        .report-card-container .traditional-border {
-          border: 6px double var(--rc-color, #002060) !important;
-        }
-        .report-card-container.print-container,
-        .report-card-container .print-container {
-          border-color: var(--rc-color, #002060) !important;
-        }
-      `}} />
-      
-      {selectedTemplate === 'classic_portrait' ? (
-        <>
-          {/* Header section with UDISE */}
-          <div className="flex justify-end items-center text-[10px] sm:text-[11px] font-black text-[#CC0000] uppercase tracking-wider mb-1">
-            <div>UDISE CODE-{currentSchool?.udiseCode || '09040803605'}</div>
-          </div>
-
-          {/* School Logo, Name & Address */}
-          <div className="flex items-center justify-center gap-4 mb-3">
-            {currentSchool?.logo && (
-              <img 
-                src={currentSchool.logo} 
-                alt="School Logo" 
-                className="w-16 h-16 sm:w-20 sm:h-20 object-contain shrink-0" 
-                referrerPolicy="no-referrer"
-              />
-            )}
-            <div className="text-center flex-1">
-              <h1 
-                style={getSchoolNameStyle(currentSchool?.name || 'HARDEV SINGH S.S.N.Jr.HIGH SCHOOL', 'classic_portrait')}
-                className="font-black text-[#002060] uppercase tracking-wide leading-tight"
-              >
-                {currentSchool?.name || 'HARDEV SINGH S.S.N.Jr.HIGH SCHOOL'}
-              </h1>
-              <p 
-                style={getAddressStyle(currentSchool?.address || 'MILAK BHOLA SINGH SONAKPUR MORADABAD-244001', 'classic_portrait')}
-                className="font-bold text-[#002060] uppercase tracking-widest mt-1"
-              >
-                {currentSchool?.address || 'MILAK BHOLA SINGH SONAKPUR MORADABAD-244001'}
-              </p>
-              <p className="font-bold text-[#002060] text-[9px] sm:text-[10px] uppercase tracking-wider mt-0.5">
-                Contact No: {currentSchool?.mobile || '9411833501, 8057283623'}
-                {currentSchool?.altMobile ? `, ${currentSchool.altMobile}` : ''}
-              </p>
-            </div>
-            {currentSchool?.logo && <div className="w-16 h-16 sm:w-20 sm:h-20 shrink-0 hidden sm:block"></div>}
-          </div>
-
-          {/* Double decorative horizontal header separator */}
-          <div className="border-t-2 border-[#002060] py-0.5 my-2"></div>
-
-          {/* REPORT CARD Pill */}
-          <div className="text-center my-2">
-            <div className="px-5 py-0.5 bg-[#002060] text-white rounded border-2 border-double border-white text-[13px] sm:text-[14px] font-black tracking-widest uppercase inline-block">
-              REPORT CARD
-            </div>
-          </div>
-
-          {/* Session Text */}
-          <p className="text-center text-[#002060] text-[10.5px] sm:text-[11px] font-extrabold tracking-widest uppercase mb-3">
-            ACADEMIC SESSION {sessionToUse}
-          </p>
-
-          {/* Decorative bottom lines */}
-          <div className="border-b border-[#002060] mb-3"></div>
-
-          {/* Student metadata + passport photo container */}
-          <div className="flex flex-row gap-4 items-start justify-between mb-4">
-            <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2.5 text-[10.5px] sm:text-[11px] w-full">
-              <div className="flex items-baseline">
-                <span className="font-bold text-[#002060] w-24 shrink-0">Admn.No</span>
-                <span className="font-extrabold flex-1">: {student.admissionNo || student.srNo || 'N/A'}</span>
-              </div>
-              <div className="flex items-baseline">
-                <span className="font-bold text-[#002060] w-24 shrink-0">Class/Section</span>
-                <span className="font-extrabold flex-1">: {student.grade || 'N/A'}</span>
-              </div>
-              <div className="flex items-baseline">
-                <span className="font-bold text-[#002060] w-24 shrink-0">Student's Name</span>
-                <span className="font-black text-[#002060] uppercase flex-1">: {student.name}</span>
-              </div>
-              <div className="flex items-baseline">
-                <span className="font-bold text-[#002060] w-24 shrink-0">Roll No</span>
-                <span className="font-extrabold flex-1">: {student.rollNo || 'N/A'}</span>
-              </div>
-              <div className="flex items-baseline col-span-1">
-                <span className="font-bold text-[#002060] w-24 shrink-0">Father's Name</span>
-                <span className="font-extrabold uppercase flex-1">: {student.fatherName || 'N/A'}</span>
-              </div>
-              <div className="flex items-baseline col-span-1">
-                <span className="font-bold text-[#002060] w-24 shrink-0">Mother's Name</span>
-                <span className="font-extrabold uppercase flex-1">: {student.motherName || 'N/A'}</span>
-              </div>
-              <div className="flex items-baseline col-span-1">
-                <span className="font-bold text-[#002060] w-24 shrink-0">D.O.B</span>
-                <span className="font-extrabold uppercase flex-1">: {student.dob || '-'}</span>
-              </div>
-              <div className="flex items-baseline col-span-1">
-                <span className="font-bold text-[#002060] w-24 shrink-0">Address</span>
-                <span className="font-extrabold uppercase flex-1">: {student.address || student.presentVillageMohalla || '-'}</span>
-              </div>
-            </div>
-            
-            {/* Passport photo box */}
-            <div className="w-16 h-20 border border-dashed border-[#002060] rounded flex items-center justify-center text-center bg-slate-50 overflow-hidden shrink-0 shadow-inner">
-              {isValidPhotoUrl(student.photoUrl || student.docStudentPhoto) ? (
-                <img 
-                  src={(isValidPhotoUrl(student.photoUrl) ? student.photoUrl : student.docStudentPhoto) || ''} 
-                  alt="" 
-                  className="w-full h-full object-cover" 
-                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                />
-              ) : (
-                <div className="text-[7px] uppercase font-bold text-slate-400 p-1 leading-tight select-none">Passport Photo</div>
-              )}
-            </div>
-          </div>
-
-          {/* Subjects & Marks Grid table */}
-          <div className="overflow-x-auto my-3">
-            <table className="w-full border-2 border-[#002060] text-center text-[9.5px] border-collapse">
-              <thead>
-                <tr className="border-b-2 border-[#002060] bg-slate-50">
-                  <th rowSpan={2} className="border-r-2 border-[#002060] p-1 text-center align-middle font-black w-[16%]">SUBJECT</th>
-                  <th colSpan={5} className="border-r-2 border-[#002060] p-1 text-center font-extrabold text-[#002060] uppercase bg-slate-50 text-[9px]">HALF YEARLY EXAMINATION</th>
-                  <th colSpan={5} className="border-r-2 border-[#002060] p-1 text-center font-extrabold text-[#002060] uppercase bg-slate-50 text-[9px]">ANNUAL EXAMINATION</th>
-                  <th colSpan={3} className="p-1 text-center font-extrabold text-[#002060] uppercase bg-slate-50 text-[9px]">FINAL EVALUATION</th>
-                </tr>
-                <tr className="border-b-2 border-[#002060] text-[7.5px] font-bold text-slate-700 bg-slate-50/50">
-                  {/* Half Yearly columns */}
-                  <th className="border-r border-[#002060] p-0.5 w-[5%]">TEST<br/>(10)</th>
-                  <th className="border-r border-[#002060] p-0.5 w-[6.5%]">THEORY<br/>(90/70)</th>
-                  <th className="border-r border-[#002060] p-0.5 w-[6%] text-indigo-900 bg-indigo-50/40">PRAC.<br/>(30)</th>
-                  <th className="border-r border-[#002060] p-0.5 w-[6.5%]">TOTAL<br/>(100)</th>
-                  <th className="border-r-2 border-[#002060] p-0.5 w-[7.5%] text-[#002060]">OBT.<br/>MARKS</th>
-                  {/* Annual columns */}
-                  <th className="border-r border-[#002060] p-0.5 w-[5%]">TEST<br/>(10)</th>
-                  <th className="border-r border-[#002060] p-0.5 w-[6.5%]">THEORY<br/>(90/70)</th>
-                  <th className="border-r border-[#002060] p-0.5 w-[6%] text-indigo-900 bg-indigo-50/40">PRAC.<br/>(30)</th>
-                  <th className="border-r border-[#002060] p-0.5 w-[6.5%]">TOTAL<br/>(100)</th>
-                  <th className="border-r-2 border-[#002060] p-0.5 w-[7.5%] text-[#002060]">OBT.<br/>MARKS</th>
-                  {/* Final columns */}
-                  <th className="border-r border-[#002060] p-0.5 w-[7%]">FINAL<br/>TOTAL</th>
-                  <th className="border-r border-[#002060] p-0.5 w-[7%] text-[#002060]">FINAL OBT.<br/>MARKS</th>
-                  <th className="p-0.5 w-[6.5%] text-indigo-700">GRADE</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#002060]">
-                {subjectRows.map((sub, index) => (
-                  <tr key={`${sub.subject}-${index}`} className="hover:bg-slate-50/20">
-                    <td className="border-r-2 border-[#002060] text-left px-2 py-1 font-extrabold uppercase text-[#002060] bg-slate-50/20 text-[9px]">{sub.subject}</td>
-                    <td className="border-r border-[#002060] p-0.5 font-bold text-center font-mono">{displayVal(sub.hyTestExists, sub.hyTestVal)}</td>
-                    <td className="border-r border-[#002060] p-0.5 font-bold text-center font-mono">{displayVal(sub.hyExamExists, sub.hyExamVal)}</td>
-                    <td className="border-r border-[#002060] p-0.5 font-bold text-center font-mono text-indigo-900 bg-indigo-50/20">
-                      {sub.hasHyPrac || sub.isSubjectPractical ? displayVal(sub.hyPracExists, sub.hyPracVal) : '-'}
-                    </td>
-                    <td className="border-r border-[#002060] p-0.5 font-bold text-center font-mono text-slate-500">{sub.hasHy ? sub.hyMax : ''}</td>
-                    <td className="border-r-2 border-[#002060] p-0.5 font-black text-center font-mono text-slate-900 bg-indigo-50/10">{sub.hasHy ? sub.hyObt : ''}</td>
-                    <td className="border-r border-[#002060] p-0.5 font-bold text-center font-mono">{displayVal(sub.yTestExists, sub.yTestVal)}</td>
-                    <td className="border-r border-[#002060] p-0.5 font-bold text-center font-mono">{displayVal(sub.yExamExists, sub.yExamVal)}</td>
-                    <td className="border-r border-[#002060] p-0.5 font-bold text-center font-mono text-indigo-900 bg-indigo-50/20">
-                      {sub.hasYPrac || sub.isSubjectPractical ? displayVal(sub.yPracExists, sub.yPracVal) : '-'}
-                    </td>
-                    <td className="border-r border-[#002060] p-0.5 font-bold text-center font-mono text-slate-500">{sub.hasY ? sub.yMax : ''}</td>
-                    <td className="border-r-2 border-[#002060] p-0.5 font-black text-center font-mono text-slate-900 bg-indigo-50/10">{sub.hasY ? sub.yObt : ''}</td>
-                    <td className="border-r border-[#002060] p-0.5 font-bold text-center font-mono text-slate-500">{sub.hasAny ? sub.finalMax : ''}</td>
-                    <td className="border-r border-[#002060] p-0.5 font-black text-center font-mono text-[#002060] bg-indigo-50/25">{sub.hasAny ? sub.finalObt : ''}</td>
-                    <td className="p-0.5 font-black text-center text-indigo-800 bg-indigo-50/40">{sub.hasAny ? sub.grade : ''}</td>
-                  </tr>
-                ))}
-                
-                {/* Row Total */}
-                <tr className="font-black text-slate-900 bg-slate-100 border-t-2 border-[#002060]">
-                  <td className="border-r-2 border-[#002060] text-left px-2 py-1.5 font-black uppercase text-[#002060] text-[9px]">TOTAL</td>
-                  <td className="border-r border-[#002060] p-0.5"></td>
-                  <td className="border-r border-[#002060] p-0.5"></td>
-                  <td className="border-r border-[#002060] p-0.5"></td>
-                  <td className="border-r border-[#002060] p-0.5 font-mono text-slate-600">{totalHyMax > 0 ? totalHyMax : ''}</td>
-                  <td className="border-r-2 border-[#002060] p-0.5 font-mono text-slate-900">{totalHyObt > 0 ? totalHyObt : ''}</td>
-                  <td className="border-r border-[#002060] p-0.5"></td>
-                  <td className="border-r border-[#002060] p-0.5"></td>
-                  <td className="border-r border-[#002060] p-0.5"></td>
-                  <td className="border-r border-[#002060] p-0.5 font-mono text-slate-600">{totalYMax > 0 ? totalYMax : ''}</td>
-                  <td className="border-r-2 border-[#002060] p-0.5 font-mono text-slate-900">{totalYObt > 0 ? totalYObt : ''}</td>
-                  <td className="border-r border-[#002060] p-0.5 font-mono text-slate-600">{totalFinalMax > 0 ? totalFinalMax : ''}</td>
-                  <td className="border-r border-[#002060] p-0.5 font-mono text-[#002060] font-black">{totalFinalObt > 0 ? totalFinalObt : ''}</td>
-                  <td className="p-0.5 text-indigo-900 font-black">{totalFinalMax > 0 ? overallGrade : ''}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          {/* Results score summarizer details columns */}
-          <div className="grid grid-cols-2 gap-x-12 gap-y-1.5 text-[11px] sm:text-[11.5px] text-slate-900 my-3 pt-1">
-            <div className="space-y-1.5">
-              <div className="flex">
-                <span className="font-bold text-[#002060] w-24 shrink-0">RESULT</span>
-                <span className="font-extrabold">: {passed ? 'PASSED' : 'FAILED'}</span>
-              </div>
-              <div className="flex">
-                <span className="font-bold text-[#002060] w-24 shrink-0">PERCENTAGE</span>
-                <span className="font-extrabold">: {overallPercentage.toFixed(2)}%</span>
-              </div>
-              <div className="flex">
-                <span className="font-bold text-[#002060] w-24 shrink-0">GRADE</span>
-                <span className="font-extrabold">: {overallGrade}</span>
-              </div>
-              <div className="flex">
-                <span className="font-bold text-[#002060] w-24 shrink-0">RANK</span>
-                <span className="font-extrabold">: {rank}</span>
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <div className="flex">
-                <span className="font-bold text-[#002060] w-24 shrink-0">REMARK</span>
-                <span className="font-extrabold">: {remark}</span>
-              </div>
-              <div className="flex">
-                <span className="font-bold text-[#002060] w-24 shrink-0">ATTENDANCE</span>
-                <span className="font-extrabold">: {attendanceString}</span>
-              </div>
-              <div className="flex">
-                <span className="font-bold text-[#002060] w-24 shrink-0">DATE</span>
-                <span className="font-extrabold">: {new Date().toLocaleDateString('en-GB')}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Signatures Row layout */}
-          <div className="flex justify-between items-center mt-10 mb-2 px-8 text-center text-[10px] font-black text-[#002060]">
-            <div className="flex flex-col items-center">
-              <div className="h-8"></div>
-              <span className="border-t border-[#002060] pt-1 px-4 uppercase tracking-wider text-[9px]">CLASS TEACHER</span>
-            </div>
-            <div className="flex flex-col items-center">
-              <div className="h-8"></div>
-              <span className="border-t border-[#002060] pt-1 px-4 uppercase tracking-wider text-[9px]">PRINCIPAL</span>
-            </div>
-          </div>
-
-          {/* Grading Scale instruction footers */}
-          <div className="border-t border-dashed border-[#002060] pt-2.5 mt-3">
-            <p className="text-center font-bold text-[9.5px] text-[#002060] uppercase tracking-wider mb-1">Instructions</p>
-            <p className="text-[9px] text-slate-600 font-semibold mb-1">
-              GRADING SCALE FOR SCHOLASTIC AREAS : Grade are awarded on 8- point grading scale as follows
-            </p>
-            
-            <table className="w-full text-center border border-[#002060] text-[7.5px] sm:text-[8px] border-collapse">
-              <thead>
-                <tr className="bg-slate-50 font-bold border-b border-[#002060] text-slate-700">
-                  <td className="border-r border-[#002060] p-0.5 font-semibold uppercase text-slate-500">PERCENTAGE RANGE</td>
-                  <td className="border-r border-[#002060] p-0.5">91%-100%</td>
-                  <td className="border-r border-[#002060] p-0.5">81%-90%</td>
-                  <td className="border-r border-[#002060] p-0.5">71%-80%</td>
-                  <td className="border-r border-[#002060] p-0.5">61%-70%</td>
-                  <td className="border-r border-[#002060] p-0.5">51%-60%</td>
-                  <td className="border-r border-[#002060] p-0.5">41%-50%</td>
-                  <td className="border-r border-[#002060] p-0.5">33%-40%</td>
-                  <td className="p-0.5">32% & BELOW</td>
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="font-extrabold text-[#002060] text-[8.5px]">
-                  <td className="border-r border-[#002060] p-0.5 font-bold text-slate-500 text-[7.5px]">GRADE</td>
-                  <td className="border-r border-[#002060] p-0.5 bg-indigo-50/10">A1</td>
-                  <td className="border-r border-[#002060] p-0.5 bg-indigo-50/10">A2</td>
-                  <td className="border-r border-[#002060] p-0.5 bg-indigo-50/10">B1</td>
-                  <td className="border-r border-[#002060] p-0.5 bg-indigo-50/10">B2</td>
-                  <td className="border-r border-[#002060] p-0.5 bg-indigo-50/10">C1</td>
-                  <td className="border-r border-[#002060] p-0.5 bg-indigo-50/10">C2</td>
-                  <td className="border-r border-[#002060] p-0.5 bg-indigo-50/10">D</td>
-                  <td className="p-0.5 bg-indigo-50/10">E</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </>
-      ) : (
-        <>
-          {/* Header section with UDISE */}
-          <div className="flex justify-end items-center font-serif text-[10px] sm:text-[11px] font-black text-[#CC0000] uppercase tracking-wider mb-1">
-            <div>UDISE CODE-{currentSchool?.udiseCode || '09040803605'}</div>
-          </div>
-
-          {/* School Logo, Name & Address */}
-          <div className="flex items-center justify-between gap-4 mb-2">
-            {currentSchool?.logo ? (
-              <img 
-                src={currentSchool.logo} 
-                alt="School Logo" 
-                className="w-12 h-12 sm:w-14 sm:h-14 object-contain shrink-0" 
-                referrerPolicy="no-referrer"
-              />
-            ) : (
-              <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center font-bold text-slate-400 text-xs shrink-0">Logo</div>
-            )}
-            <div className="text-center flex-1">
-              <h1 
-                style={getSchoolNameStyle(currentSchool?.name || 'HARDEV SINGH S.S.N.Jr.HIGH SCHOOL', 'landscape_new')}
-                className="font-black text-[#002060] font-serif uppercase tracking-wide leading-tight"
-              >
-                {currentSchool?.name || 'HARDEV SINGH S.S.N.Jr.HIGH SCHOOL'}
-              </h1>
-              <p 
-                style={getAddressStyle(currentSchool?.address || 'MILAK BHOLA SINGH SONAKPUR MORADABAD-244001', 'landscape_new')}
-                className="font-bold text-[#002060] uppercase tracking-widest mt-0.5"
-              >
-                {currentSchool?.address || 'MILAK BHOLA SINGH SONAKPUR MORADABAD-244001'}
-              </p>
-              <p className="font-bold text-[#002060] text-[8px] sm:text-[9px] md:text-[10px] uppercase tracking-wider mt-0.5">
-                Contact No: {currentSchool?.mobile || '9411833501, 8057283623'}
-                {currentSchool?.altMobile ? `, ${currentSchool.altMobile}` : ''}
-              </p>
-            </div>
-            <div className="w-12 h-12 shrink-0 hidden sm:block"></div>
-          </div>
-
-          {/* Double decorative horizontal header separator */}
-          <div className="border-t border-[#002060] py-0.5 my-1"></div>
-
-          {/* REPORT CARD Pill */}
-          <div className="text-center my-1.5 flex flex-col items-center justify-center">
-            <div className="px-5 py-0.5 bg-[#002060] text-white rounded-md border border-double border-white font-serif text-[12px] sm:text-[13px] font-black tracking-widest uppercase inline-block shadow-sm">
-              REPORT CARD
-            </div>
-            <p className="text-center font-serif text-[#002060] text-[9px] sm:text-[10px] font-extrabold tracking-widest uppercase mt-1">
-              ACADEMIC SESSION {sessionToUse}
-            </p>
-          </div>
-
-          {/* Decorative bottom lines */}
-          <div className="border-b border-[#002060] mb-3"></div>
-
-          {/* Student Details Section (Landscape format) */}
-          <div className="border border-[#002060] p-2.5 rounded bg-[#f4f7fa] mb-3 grid grid-cols-12 gap-2">
-            <div className="col-span-10 grid grid-cols-2 gap-x-6 gap-y-1.5 text-[10.5px] font-serif">
-              <div className="flex">
-                <span className="font-bold text-[#002060] w-28 shrink-0">Admn. No</span>
-                <span className="font-extrabold text-slate-800 flex-1">: {student.admissionNo || student.srNo || '-'}</span>
-              </div>
-              <div className="flex">
-                <span className="font-bold text-[#002060] w-28 shrink-0">Class/Section</span>
-                <span className="font-extrabold text-slate-800 flex-1">: {student.grade || '-'}</span>
-              </div>
-              <div className="flex">
-                <span className="font-bold text-[#002060] w-28 shrink-0">Student's Name</span>
-                <span className="font-black text-[#002060] uppercase flex-1">: {student.name}</span>
-              </div>
-              <div className="flex">
-                <span className="font-bold text-[#002060] w-28 shrink-0">Roll No</span>
-                <span className="font-extrabold text-slate-800 flex-1">: {student.rollNo || '-'}</span>
-              </div>
-              <div className="flex">
-                <span className="font-bold text-[#002060] w-28 shrink-0">Father's Name</span>
-                <span className="font-extrabold text-slate-800 uppercase flex-1">: {student.fatherName || '-'}</span>
-              </div>
-              <div className="flex">
-                <span className="font-bold text-[#002060] w-28 shrink-0">Mother's Name</span>
-                <span className="font-extrabold text-slate-800 uppercase flex-1">: {student.motherName || '-'}</span>
-              </div>
-              <div className="flex pt-0.5">
-                <span className="font-bold text-[#002060] w-28 shrink-0">D.O.B</span>
-                <span className="font-extrabold text-slate-800 uppercase flex-1">: {student.dob || '-'}</span>
-              </div>
-              <div className="flex pt-0.5">
-                <span className="font-bold text-[#002060] w-28 shrink-0">Address</span>
-                <span className="font-extrabold text-slate-800 uppercase flex-1">: {student.address || student.presentVillageMohalla || '-'}</span>
-              </div>
-            </div>
-            <div className="col-span-2 flex justify-end">
-              <div className="relative group w-16 h-20 border border-dashed border-[#002060] rounded flex items-center justify-center text-center bg-slate-50 overflow-hidden shrink-0 shadow-inner">
-                {isValidPhotoUrl(student.photoUrl || student.docStudentPhoto) ? (
-                  <img 
-                    src={(isValidPhotoUrl(student.photoUrl) ? student.photoUrl : student.docStudentPhoto) || ''} 
-                    alt="" 
-                    className="w-full h-full object-cover" 
-                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                  />
-                ) : (
-                  <div className="text-[7px] uppercase font-bold text-slate-400 p-1 leading-tight select-none">Passport Photo</div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Table and Summary Side-By-Side layout */}
-          <div className="grid grid-cols-12 gap-3 mb-2">
-            {/* Marks grid */}
-            <div className="col-span-9 overflow-x-auto">
-              <table className="w-full border-2 border-[#002060] text-center text-[8.5px] font-serif border-collapse">
-                <thead>
-                  <tr className="border-b border-[#002060] bg-slate-50/50">
-                    <th rowSpan={2} className="border-r border-[#002060] p-1 text-center align-middle text-slate-800 font-black w-[16%]">SUBJECT</th>
-                    <th colSpan={5} className="border-r border-[#002060] p-0.5 text-center font-extrabold text-[#002060] uppercase text-[8px]">HALF YEARLY EXAMINATION</th>
-                    <th colSpan={5} className="border-r border-[#002060] p-0.5 text-center font-extrabold text-[#002060] uppercase text-[8px]">ANNUAL EXAMINATION</th>
-                    <th colSpan={3} className="p-0.5 text-center font-extrabold text-[#002060] uppercase text-[8px]">FINAL EVALUATION</th>
-                  </tr>
-                  <tr className="border-b border-[#002060] text-[7px] font-bold text-slate-700 bg-slate-100/50">
-                    {/* Half Yearly columns */}
-                    <th className="border-r border-[#002060] p-0.5 w-[5%]">TEST<br/>(10)</th>
-                    <th className="border-r border-[#002060] p-0.5 w-[6.5%]">THEORY<br/>(90/70)</th>
-                    <th className="border-r border-[#002060] p-0.5 w-[6%] text-indigo-900 bg-indigo-50/40">PRAC.<br/>(30)</th>
-                    <th className="border-r border-[#002060] p-0.5 w-[6.5%]">TOTAL<br/>(100)</th>
-                    <th className="border-r border-[#002060] p-0.5 w-[7.5%] text-[#002060]">OBT.<br/>MARKS</th>
-                    {/* Annual columns */}
-                    <th className="border-r border-[#002060] p-0.5 w-[5%]">TEST<br/>(10)</th>
-                    <th className="border-r border-[#002060] p-0.5 w-[6.5%]">THEORY<br/>(90/70)</th>
-                    <th className="border-r border-[#002060] p-0.5 w-[6%] text-indigo-900 bg-indigo-50/40">PRAC.<br/>(30)</th>
-                    <th className="border-r border-[#002060] p-0.5 w-[6.5%]">TOTAL<br/>(100)</th>
-                    <th className="border-r border-[#002060] p-0.5 w-[7.5%] text-[#002060]">OBT.<br/>MARKS</th>
-                    {/* Final columns */}
-                    <th className="border-r border-[#002060] p-0.5 w-[7%]">FINAL<br/>TOTAL</th>
-                    <th className="border-r border-[#002060] p-0.5 w-[7%] text-[#002060]">FINAL OBT.<br/>MARKS</th>
-                    <th className="p-0.5 w-[6.5%] text-indigo-700">GRADE</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#002060]">
-                  {subjectRows.map((sub, index) => (
-                    <tr key={`${sub.subject}-${index}`} className="hover:bg-slate-50/20 text-[8.5px]">
-                      <td className="border-r border-[#002060] text-left px-1.5 py-0.5 font-extrabold uppercase text-[#002060] bg-slate-50/10">{sub.subject}</td>
-                      <td className="border-r border-[#002060] p-0.5 font-bold text-center font-mono">{displayVal(sub.hyTestExists, sub.hyTestVal)}</td>
-                      <td className="border-r border-[#002060] p-0.5 font-bold text-center font-mono">{displayVal(sub.hyExamExists, sub.hyExamVal)}</td>
-                      <td className="border-r border-[#002060] p-0.5 font-bold text-center font-mono text-indigo-900 bg-indigo-50/20">
-                        {sub.hasHyPrac || sub.isSubjectPractical ? displayVal(sub.hyPracExists, sub.hyPracVal) : '-'}
-                      </td>
-                      <td className="border-r border-[#002060] p-0.5 font-bold text-center font-mono text-slate-400">{sub.hasHy ? sub.hyMax : ''}</td>
-                      <td className="border-r border-[#002060] p-0.5 font-black text-center font-mono text-slate-900 bg-indigo-50/10">{sub.hasHy ? sub.hyObt : ''}</td>
-                      <td className="border-r border-[#002060] p-0.5 font-bold text-center font-mono">{displayVal(sub.yTestExists, sub.yTestVal)}</td>
-                      <td className="border-r border-[#002060] p-0.5 font-bold text-center font-mono">{displayVal(sub.yExamExists, sub.yExamVal)}</td>
-                      <td className="border-r border-[#002060] p-0.5 font-bold text-center font-mono text-indigo-900 bg-indigo-50/20">
-                        {sub.hasYPrac || sub.isSubjectPractical ? displayVal(sub.yPracExists, sub.yPracVal) : '-'}
-                      </td>
-                      <td className="border-r border-[#002060] p-0.5 font-bold text-center font-mono text-slate-400">{sub.hasY ? sub.yMax : ''}</td>
-                      <td className="border-r border-[#002060] p-0.5 font-black text-center font-mono text-slate-900 bg-indigo-50/10">{sub.hasY ? sub.yObt : ''}</td>
-                      <td className="border-r border-[#002060] p-0.5 font-bold text-center font-mono text-slate-400">{sub.hasAny ? sub.finalMax : ''}</td>
-                      <td className="border-r border-[#002060] p-0.5 font-black text-center font-mono text-[#002060] bg-indigo-50/25">{sub.hasAny ? sub.finalObt : ''}</td>
-                      <td className="p-0.5 font-black text-center text-indigo-800 bg-indigo-50/40">{sub.hasAny ? sub.grade : ''}</td>
-                    </tr>
-                  ))}
-                  
-                  {/* Row Total */}
-                  <tr className="font-black text-slate-900 bg-slate-100 border-t border-[#002060] text-[8.5px]">
-                    <td className="border-r border-[#002060] text-left px-1.5 py-1 font-black uppercase text-[#002060]">TOTAL</td>
-                    <td className="border-r border-[#002060] p-0.5"></td>
-                    <td className="border-r border-[#002060] p-0.5"></td>
-                    <td className="border-r border-[#002060] p-0.5"></td>
-                    <td className="border-r border-[#002060] p-0.5 font-mono text-slate-600">{totalHyMax > 0 ? totalHyMax : ''}</td>
-                    <td className="border-r border-[#002060] p-0.5 font-mono text-slate-900">{totalHyObt > 0 ? totalHyObt : ''}</td>
-                    <td className="border-r border-[#002060] p-0.5"></td>
-                    <td className="border-r border-[#002060] p-0.5"></td>
-                    <td className="border-r border-[#002060] p-0.5"></td>
-                    <td className="border-r border-[#002060] p-0.5 font-mono text-slate-600">{totalYMax > 0 ? totalYMax : ''}</td>
-                    <td className="border-r border-[#002060] p-0.5 font-mono text-slate-900">{totalYObt > 0 ? totalYObt : ''}</td>
-                    <td className="border-r border-[#002060] p-0.5 font-mono text-slate-600">{totalFinalMax > 0 ? totalFinalMax : ''}</td>
-                    <td className="border-r border-[#002060] p-0.5 font-mono text-[#002060] font-black">{totalFinalObt > 0 ? totalFinalObt : ''}</td>
-                    <td className="p-0.5 text-indigo-900 font-black">{totalFinalMax > 0 ? overallGrade : ''}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            {/* Summary card sidebar */}
-            <div className="col-span-3">
-              <div className="border border-[#002060] rounded overflow-hidden bg-[#f8fafc] flex flex-col h-full text-[9.5px] font-serif">
-                <div className="bg-[#002060] text-white py-1 px-1.5 font-bold uppercase tracking-wider text-center text-[9px] border-b border-[#002060]">
-                  SUMMARY CARD
-                </div>
-                <div className="flex-1 p-1.5 space-y-1 divide-y divide-slate-200/55">
-                  <div className="flex justify-between items-center py-0.5">
-                    <span className="font-bold text-[#002060]">RESULT</span>
-                    <span className={`font-extrabold ${passed ? 'text-emerald-700' : 'text-red-700'}`}>{passed ? 'PASSED' : 'FAILED'}</span>
-                  </div>
-                  <div className="flex justify-between items-center py-0.5 pt-1">
-                    <span className="font-bold text-[#002060]">REMARK</span>
-                    <span className="font-extrabold text-slate-900 uppercase text-right leading-tight max-w-[100px] truncate" title={remark}>{remark}</span>
-                  </div>
-                  <div className="flex justify-between items-center py-0.5 pt-1">
-                    <span className="font-bold text-[#002060]">PERCENTAGE</span>
-                    <span className="font-extrabold text-slate-900 font-mono">{overallPercentage.toFixed(2)}%</span>
-                  </div>
-                  <div className="flex justify-between items-center py-0.5 pt-1">
-                    <span className="font-bold text-[#002060]">GRADE</span>
-                    <span className="font-extrabold text-[#002060]">{overallGrade}</span>
-                  </div>
-                  <div className="flex justify-between items-center py-0.5 pt-1">
-                    <span className="font-bold text-[#002060]">RANK</span>
-                    <span className="font-extrabold text-slate-900">{rank}</span>
-                  </div>
-                  <div className="flex justify-between items-center py-0.5 pt-1">
-                    <span className="font-bold text-[#002060]">ATTENDANCE</span>
-                    <span className="font-extrabold text-slate-900">{attendanceString}</span>
-                  </div>
-                  <div className="flex justify-between items-center py-0.5 pt-1">
-                    <span className="font-bold text-[#002060]">DATE</span>
-                    <span className="font-extrabold text-slate-900">{new Date().toLocaleDateString('en-GB')}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Signatures Row layout */}
-          <div className="flex justify-between items-center mt-4 mb-2 px-10 text-center text-[9.5px] font-serif font-black text-[#002060]">
-            <div className="flex flex-col items-center">
-              <div className="h-4"></div>
-              <span className="border-t border-[#002060] pt-0.5 px-4 uppercase tracking-wider text-[8.5px]">CLASS TEACHER</span>
-            </div>
-            <div className="flex flex-col items-center">
-              <div className="h-4"></div>
-              <span className="border-t border-[#002060] pt-0.5 px-4 uppercase tracking-wider text-[8.5px]">PRINCIPAL</span>
-            </div>
-          </div>
-
-          {/* Grading Scale instruction footers */}
-          <div className="border-t border-dashed border-[#002060] pt-1.5 mt-1">
-            <p className="text-center font-bold text-[9px] text-[#002060] uppercase tracking-wider mb-0.5">INSTRUCTIONS</p>
-            <p className="text-[8px] text-slate-600 font-semibold mb-0.5 text-center">
-              GRADING SCALE FOR SCHOLASTIC AREAS : Grade are awarded on 8-point grading scale as follows
-            </p>
-            
-            <table className="w-full text-center border border-[#002060] text-[7px] font-serif border-collapse max-w-xl mx-auto">
-              <thead>
-                <tr className="bg-slate-50 font-bold border-b border-[#002060] text-slate-700">
-                  <td className="border-r border-[#002060] p-0.5 font-semibold uppercase text-slate-500">PERCENTAGE RANGE</td>
-                  <td className="border-r border-[#002060] p-0.5">91%-100%</td>
-                  <td className="border-r border-[#002060] p-0.5">81%-90%</td>
-                  <td className="border-r border-[#002060] p-0.5">71%-80%</td>
-                  <td className="border-r border-[#002060] p-0.5">61%-70%</td>
-                  <td className="border-r border-[#002060] p-0.5">51%-60%</td>
-                  <td className="border-r border-[#002060] p-0.5">41%-50%</td>
-                  <td className="border-r border-[#002060] p-0.5">33%-40%</td>
-                  <td className="p-0.5">32% & BELOW</td>
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="font-extrabold text-[#002060] text-[8px]">
-                  <td className="border-r border-[#002060] p-0.5 font-bold text-slate-500 text-[7px]">GRADE</td>
-                  <td className="border-r border-[#002060] p-0.5 bg-indigo-50/10">A1</td>
-                  <td className="border-r border-[#002060] p-0.5 bg-indigo-50/10">A2</td>
-                  <td className="border-r border-[#002060] p-0.5 bg-indigo-50/10">B1</td>
-                  <td className="border-r border-[#002060] p-0.5 bg-indigo-50/10">B2</td>
-                  <td className="border-r border-[#002060] p-0.5 bg-indigo-50/10">C1</td>
-                  <td className="border-r border-[#002060] p-0.5 bg-indigo-50/10">C2</td>
-                  <td className="border-r border-[#002060] p-0.5 bg-indigo-50/10">D</td>
-                  <td className="p-0.5 bg-indigo-50/10">E</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </>
+      {selectedTemplate === 'classic_portrait' && (
+        <ClassicPortraitTemplate {...commonProps} />
       )}
 
+      {selectedTemplate === 'landscape_new' && (
+        <LandscapeProTemplate {...commonProps} />
+      )}
+
+      {selectedTemplate === 'nursery_kg' && (
+        <NurseryKgPortraitTemplate {...commonProps} />
+      )}
+
+      {selectedTemplate === 'nursery_kg_landscape' && (
+        <NurseryKgLandscapeTemplate {...commonProps} />
+      )}
     </div>
   );
 }
@@ -927,7 +278,7 @@ export function BulkResultsPrinter() {
   const [selectedClass, setSelectedClass] = useState('Class 9');
   const [printType, setPrintType] = useState<'all' | 'single'>('all');
   const [selectedStudentId, setSelectedStudentId] = useState('');
-  const [selectedTemplate, setSelectedTemplate] = useState<'classic_portrait' | 'landscape_new' | 'nursery_kg'>('classic_portrait');
+  const [selectedTemplate, setSelectedTemplate] = useState<'classic_portrait' | 'landscape_new' | 'nursery_kg' | 'nursery_kg_landscape'>('classic_portrait');
 
   const currentSchool = schools.find(school => school.id === currentUser?.schoolId);
   const brandColor = currentSchool?.reportCardColor || '#002060';
@@ -957,18 +308,25 @@ export function BulkResultsPrinter() {
     ? classStudents 
     : classStudents.filter(s => s.id === selectedStudentId);
 
+  const isLandscape = selectedTemplate === 'landscape_new' || selectedTemplate === 'nursery_kg_landscape';
+
   return (
     <div className="space-y-6">
       {/* Page break CSS inject */}
       <style dangerouslySetInnerHTML={{__html: `
         @media print {
           @page {
-            size: ${selectedTemplate === 'landscape_new' ? 'A4 landscape' : 'A4 portrait'};
-            margin: ${selectedTemplate === 'landscape_new' ? '5mm' : '10mm'};
+            size: ${isLandscape ? 'A4 landscape' : 'A4 portrait'};
+            margin: 3mm;
           }
-          body {
+          html, body {
             background: white !important;
             color: black !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            height: 100% !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
           
           #printable-bulk-results {
@@ -978,9 +336,6 @@ export function BulkResultsPrinter() {
             margin: 0 !important;
             padding: 0 !important;
             background: white !important;
-          }
-          
-          #printable-bulk-results {
             --rc-color: ${brandColor} !important;
           }
  
@@ -989,94 +344,94 @@ export function BulkResultsPrinter() {
           }
  
           .print-card-wrapper {
-            page-break-after: always;
-            break-after: page;
-            margin-bottom: 0 !important;
-            padding-bottom: 0 !important;
+            page-break-after: always !important;
+            break-after: page !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            margin: 0 !important;
+            padding: 0 !important;
             box-sizing: border-box !important;
             width: 100% !important;
-            height: auto !important;
+            height: 100% !important;
+            max-height: ${isLandscape ? '200mm' : '288mm'} !important;
             position: relative !important;
-            overflow: visible !important;
+            overflow: hidden !important;
           }
           
-          /* Ensure child print containers maintain their border and style when printing */
           .print-container {
-            border: 6px double var(--rc-color, #002060) !important;
+            border: 5px double var(--rc-color, #002060) !important;
             border-radius: 0 !important;
             box-shadow: none !important;
-            padding: ${selectedTemplate === 'landscape_new' ? '0.3cm 0.4cm' : '0.6cm'} !important;
+            padding: ${isLandscape ? '3mm 4mm' : '4mm 5mm'} !important;
             background: white !important;
             box-sizing: border-box !important;
             width: 100% !important;
             height: auto !important;
+            max-height: ${isLandscape ? '200mm' : '288mm'} !important;
             margin: 0 auto !important;
             position: relative !important;
-            overflow: visible !important;
+            overflow: hidden !important;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
           }
  
           .traditional-border {
-            border: 6px double var(--rc-color, #002060) !important;
+            border: 5px double var(--rc-color, #002060) !important;
             border-radius: 0 !important;
             box-shadow: none !important;
-            padding: ${selectedTemplate === 'landscape_new' ? '0.3cm 0.4cm' : '0.6cm'} !important;
+            padding: ${isLandscape ? '3mm 4mm' : '4mm 5mm'} !important;
             box-sizing: border-box !important;
             width: 100% !important;
             height: auto !important;
             margin: 0 auto !important;
-            overflow: visible !important;
+            overflow: hidden !important;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
           }
           
-          /* Ensure last item doesn't leave an empty page */
           .print-card-wrapper:last-child {
-            page-break-after: avoid;
-            break-after: avoid;
-          }
-
-          /* Ensure table cells are compact in print */
-          #printable-bulk-results table th, #printable-bulk-results table td {
-            padding: 4px 6px !important;
-            font-size: 9.5px !important;
-          }
-          #printable-bulk-results table tr {
-            height: auto !important;
-          }
-          /* Smaller margins on headings & elements to ensure single-page fit */
-          #printable-bulk-results h1 {
-            font-size: 20px !important;
-            margin-bottom: 2px !important;
-          }
-          #printable-bulk-results p {
-            font-size: 9px !important;
-          }
-          #printable-bulk-results .my-2, #printable-bulk-results .my-4 {
-            margin-top: 6px !important;
-            margin-bottom: 6px !important;
-          }
-          #printable-bulk-results .mb-3, #printable-bulk-results .mb-4, #printable-bulk-results .mb-5 {
-            margin-bottom: 6px !important;
-          }
-          #printable-bulk-results .mt-12 {
-            margin-top: 1.5rem !important;
-          }
-          #printable-bulk-results .gap-6 {
-            gap: 0.75rem !important;
-          }
-          #printable-bulk-results .gap-x-8 {
-            column-gap: 1.5rem !important;
-          }
-          #printable-bulk-results .gap-y-3.5 {
-            row-gap: 0.5rem !important;
+            page-break-after: avoid !important;
+            break-after: avoid !important;
           }
  
           * {
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
+            box-shadow: none !important;
           }
+        }
+
+        .report-card-container .text-\\[\\#002060\\] {
+          color: var(--rc-color, #002060) !important;
+        }
+        .report-card-container .border-\\[\\#002060\\] {
+          border-color: var(--rc-color, #002060) !important;
+        }
+        .report-card-container .bg-\\[\\#002060\\] {
+          background-color: var(--rc-color, #002060) !important;
+        }
+        .report-card-container .divide-\\[\\#002060\\] > * + * {
+          border-color: var(--rc-color, #002060) !important;
+        }
+        .report-card-container .border-t-\\[\\#002060\\] {
+          border-top-color: var(--rc-color, #002060) !important;
+        }
+        .report-card-container .border-b-\\[\\#002060\\] {
+          border-bottom-color: var(--rc-color, #002060) !important;
+        }
+        .report-card-container .border-r-\\[\\#002060\\] {
+          border-right-color: var(--rc-color, #002060) !important;
+        }
+        .report-card-container .border-l-\\[\\#002060\\] {
+          border-left-color: var(--rc-color, #002060) !important;
+        }
+        .report-card-container.traditional-border, 
+        .report-card-container .traditional-border {
+          border: 5px double var(--rc-color, #002060) !important;
+        }
+        .report-card-container.print-container,
+        .report-card-container .print-container {
+          border-color: var(--rc-color, #002060) !important;
         }
       `}} />
 
@@ -1106,10 +461,9 @@ export function BulkResultsPrinter() {
             as="select" 
             value={selectedTemplate} 
             onChange={async (e) => {
-              const val = e.target.value as 'classic_portrait' | 'landscape_new' | 'nursery_kg';
+              const val = e.target.value as any;
               setSelectedTemplate(val);
               
-              // Persist selection for students to automatically display results using this exact template in their student profile!
               try {
                 if (printType === 'single' && selectedStudentId) {
                   await updateStudent(selectedStudentId, { reportCardTemplate: val });
@@ -1125,7 +479,8 @@ export function BulkResultsPrinter() {
           >
             <option value="classic_portrait">Classic Portrait</option>
             <option value="landscape_new">Landscape Pro (New)</option>
-            <option value="nursery_kg">Nursery / KG (Oral & Written)</option>
+            <option value="nursery_kg">Nursery / KG (Portrait)</option>
+            <option value="nursery_kg_landscape">Nursery / KG (Landscape A4)</option>
           </Input>
         </div>
 
@@ -1175,7 +530,6 @@ export function BulkResultsPrinter() {
               onChange={async (e) => {
                 const sId = e.target.value;
                 setSelectedStudentId(sId);
-                // Sync template state with selected student's existing preferred template if any
                 const targetStudent = classStudents.find(s => s.id === sId);
                 if (targetStudent?.reportCardTemplate) {
                   setSelectedTemplate(targetStudent.reportCardTemplate);
@@ -1235,7 +589,7 @@ export function BulkResultsPrinter() {
                 <span className="text-[10px] text-slate-500 uppercase">A4 Printable Page</span>
               </div>
               
-              <ReportCardPrintSheet student={student} selectedTemplate={selectedTemplate} />
+              <ReportCardPrintSheet student={student} selectedTemplate={selectedTemplate} brandColor={brandColor} />
             </div>
           ))
         )}
