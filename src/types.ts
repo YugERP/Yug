@@ -175,7 +175,7 @@ export interface Student extends User {
   hasPreviousClass?: boolean;
   previousClass?: string;
   photoUrl?: string; // used interchangeably with docStudentPhoto/photoUrl
-  reportCardTemplate?: 'classic_portrait' | 'landscape_new';
+  reportCardTemplate?: 'classic_portrait' | 'landscape_new' | 'nursery_kg' | 'nursery_kg_landscape';
 }
 
 export interface Teacher extends User {

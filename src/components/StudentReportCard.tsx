@@ -4,7 +4,7 @@ import { type Student, type ExamMark, type ExamType } from '../types';
 import { Card, Button, Label } from './UI';
 import { Printer, Upload, RefreshCw, Award, BookOpen, CheckCircle, AlertCircle, FileText, X, Download, BarChart2, Eye } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { isSameGrade, isSameSubject, isValidPhotoUrl, isPracticalSubject } from '../utils/gradeHelper';
+import { isSameGrade, isSameSubject, isValidPhotoUrl, isPracticalSubject, isNurseryOrKg } from '../utils/gradeHelper';
 
 const getSchoolNameStyle = (name: string, template: 'classic_portrait' | 'landscape_new') => {
   const len = name.length;
@@ -84,12 +84,11 @@ export function StudentReportCard({ student, onClose, allowEditPhoto = true }: S
   // States
   const [activeViewTab, setActiveViewTab] = useState<'transcript' | 'analytics'>('transcript');
   const [photoUploading, setPhotoUploading] = useState(false);
+  const defaultTpl = student.reportCardTemplate || (isNurseryOrKg(student.grade) ? 'nursery_kg' : 'classic_portrait');
   const [printLayout, setPrintLayout] = useState<'portrait' | 'landscape'>(
-    student.reportCardTemplate === 'landscape_new' ? 'landscape' : 'portrait'
+    student.reportCardTemplate === 'landscape_new' || student.reportCardTemplate === 'nursery_kg_landscape' ? 'landscape' : 'portrait'
   );
-  const [selectedTemplate, setSelectedTemplate] = useState<'classic_portrait' | 'landscape_new'>(
-    student.reportCardTemplate || 'classic_portrait'
-  );
+  const [selectedTemplate, setSelectedTemplate] = useState<'classic_portrait' | 'landscape_new' | 'nursery_kg' | 'nursery_kg_landscape'>(defaultTpl);
   const [photoLoadError, setPhotoLoadError] = useState(false);
 
   const activePhoto = isValidPhotoUrl(student.photoUrl) ? student.photoUrl : (isValidPhotoUrl(student.docStudentPhoto) ? student.docStudentPhoto : null);
@@ -474,7 +473,7 @@ export function StudentReportCard({ student, onClose, allowEditPhoto = true }: S
                 onChange={async (e) => {
                   const val = e.target.value as any;
                   setSelectedTemplate(val);
-                  setPrintLayout(val === 'landscape_new' ? 'landscape' : 'portrait');
+                  setPrintLayout(val === 'landscape_new' || val === 'nursery_kg_landscape' ? 'landscape' : 'portrait');
                   if (currentUser?.role === 'TEACHER' || currentUser?.role === 'ADMIN' || currentUser?.role === 'MASTER_ADMIN' || currentUser?.role === 'CLERK') {
                     await updateStudent(student.id, { reportCardTemplate: val });
                   }
@@ -483,6 +482,8 @@ export function StudentReportCard({ student, onClose, allowEditPhoto = true }: S
               >
                 <option value="classic_portrait">Classic (Portrait)</option>
                 <option value="landscape_new">Landscape Pro (New)</option>
+                <option value="nursery_kg">Nursery / KG (Portrait)</option>
+                <option value="nursery_kg_landscape">Nursery / KG (Landscape A4)</option>
               </select>
             </div>
 
@@ -530,8 +531,8 @@ export function StudentReportCard({ student, onClose, allowEditPhoto = true }: S
           <style dangerouslySetInnerHTML={{__html: `
             @media print {
               @page { 
-                size: ${selectedTemplate === 'landscape_new' ? 'A4 landscape' : 'A4 portrait'}; 
-                margin: ${selectedTemplate === 'landscape_new' ? '5mm' : '10mm'}; 
+                size: ${selectedTemplate === 'landscape_new' || selectedTemplate === 'nursery_kg_landscape' ? 'A4 landscape' : 'A4 portrait'}; 
+                margin: ${selectedTemplate === 'landscape_new' || selectedTemplate === 'nursery_kg_landscape' ? '5mm' : '10mm'}; 
               }
               body {
                 background: white !important;
@@ -549,7 +550,7 @@ export function StudentReportCard({ student, onClose, allowEditPhoto = true }: S
                 border: 6px double var(--rc-color, #002060) !important;
                 border-radius: 0 !important;
                 box-shadow: none !important;
-                padding: ${selectedTemplate === 'landscape_new' ? '0.3cm 0.4cm' : '0.6cm'} !important;
+                padding: ${selectedTemplate === 'landscape_new' || selectedTemplate === 'nursery_kg_landscape' ? '0.3cm 0.4cm' : '0.6cm'} !important;
                 margin: 0 auto !important;
                 overflow: visible !important;
                 page-break-inside: avoid !important;
@@ -989,7 +990,7 @@ export function StudentReportCard({ student, onClose, allowEditPhoto = true }: S
                   </table>
                 </div>
               </>
-            ) : (
+            ) : selectedTemplate === 'landscape_new' ? (
               <>
                 {/* Header section with UDISE */}
                 <div className="flex justify-end items-center font-serif text-[10px] sm:text-[11px] font-black text-[#CC0000] uppercase tracking-wider mb-1">
@@ -1270,6 +1271,248 @@ export function StudentReportCard({ student, onClose, allowEditPhoto = true }: S
                       </tr>
                     </tbody>
                   </table>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Header section with UDISE */}
+                <div className="flex justify-end items-center font-serif text-[10px] sm:text-[11px] font-black text-[#CC0000] uppercase tracking-wider mb-1">
+                  <div>UDISE CODE-{currentSchool?.udiseCode || '09040803605'}</div>
+                </div>
+
+                {/* School Logo, Name & Address */}
+                <div className="flex items-center justify-center gap-4 mb-3">
+                  {currentSchool?.logo && (
+                    <img 
+                      src={currentSchool.logo} 
+                      alt="School Logo" 
+                      className="w-16 h-16 sm:w-20 sm:h-20 object-contain shrink-0" 
+                      referrerPolicy="no-referrer"
+                    />
+                  )}
+                  <div className="text-center flex-1">
+                    <h1 
+                      style={getSchoolNameStyle(currentSchool?.name || 'HARDEV SINGH S.S.N.Jr.HIGH SCHOOL', 'classic_portrait')}
+                      className="font-black text-[#002060] font-serif uppercase tracking-wide leading-tight"
+                    >
+                      {currentSchool?.name || 'HARDEV SINGH S.S.N.Jr.HIGH SCHOOL'}
+                    </h1>
+                    <p 
+                      style={getAddressStyle(currentSchool?.address || 'MILAK BHOLA SINGH SONAKPUR MORADABAD-244001', 'classic_portrait')}
+                      className="font-bold text-[#002060] uppercase tracking-widest mt-1"
+                    >
+                      {currentSchool?.address || 'MILAK BHOLA SINGH SONAKPUR MORADABAD-244001'}
+                    </p>
+                    <p className="font-bold text-[#002060] text-[9px] sm:text-[10px] md:text-[11px] uppercase tracking-wider mt-0.5">
+                      Contact No: {currentSchool?.mobile || '9411833501, 8057283623'}
+                      {currentSchool?.altMobile ? `, ${currentSchool.altMobile}` : ''}
+                    </p>
+                  </div>
+                  {currentSchool?.logo && <div className="w-16 h-16 sm:w-20 sm:h-20 shrink-0 hidden sm:block"></div>}
+                </div>
+
+                {/* Double decorative horizontal header separator */}
+                <div className="border-t-2 border-[#002060] py-0.5 my-2"></div>
+
+                {/* REPORT CARD Pill */}
+                <div className="text-center my-2">
+                  <div className="px-6 py-1 bg-[#002060] text-white rounded-md border-2 border-double border-white font-serif text-[14px] sm:text-[15px] font-black tracking-widest uppercase inline-block shadow-sm">
+                    REPORT CARD
+                  </div>
+                </div>
+
+                {/* Session Text */}
+                <p className="text-center font-serif text-[#002060] text-[11px] sm:text-[12px] font-extrabold tracking-widest uppercase mb-4">
+                  ACADEMIC SESSION {sessionToUse}
+                </p>
+
+                {/* Decorative bottom lines */}
+                <div className="border-b border-[#002060] mb-4"></div>
+
+                {/* Student metadata + passport photo container */}
+                <div className="flex flex-col sm:flex-row gap-6 items-start justify-between mb-5">
+                  <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3.5 text-[11px] sm:text-[12px] text-slate-900 font-serif w-full">
+                    <div className="flex items-baseline">
+                      <span className="font-bold text-[#002060] w-28 shrink-0">Admn.No</span>
+                      <span className="font-extrabold text-slate-800 flex-1">: {student.admissionNo || student.srNo || '-'}</span>
+                    </div>
+                    <div className="flex items-baseline">
+                      <span className="font-bold text-[#002060] w-28 shrink-0">Class/Section</span>
+                      <span className="font-extrabold text-slate-800 flex-1">: {student.grade || 'Nursery'}</span>
+                    </div>
+                    <div className="flex items-baseline">
+                      <span className="font-bold text-[#002060] w-28 shrink-0">Student's Name</span>
+                      <span className="font-black text-[#002060] uppercase flex-1">: {student.name}</span>
+                    </div>
+                    <div className="flex items-baseline">
+                      <span className="font-bold text-[#002060] w-28 shrink-0">Roll No</span>
+                      <span className="font-extrabold text-slate-800 flex-1">: {student.rollNo || '-'}</span>
+                    </div>
+                    <div className="flex items-baseline col-span-1">
+                      <span className="font-bold text-[#002060] w-28 shrink-0">Father's Name</span>
+                      <span className="font-extrabold text-slate-800 uppercase flex-1">: {student.fatherName || '-'}</span>
+                    </div>
+                    <div className="flex items-baseline col-span-1">
+                      <span className="font-bold text-[#002060] w-28 shrink-0">Mother's Name</span>
+                      <span className="font-extrabold text-slate-800 uppercase flex-1">: {student.motherName || '-'}</span>
+                    </div>
+                    <div className="flex items-baseline col-span-1">
+                      <span className="font-bold text-[#002060] w-28 shrink-0">D.O.B</span>
+                      <span className="font-extrabold text-slate-800 uppercase flex-1">: {student.dob || '-'}</span>
+                    </div>
+                    <div className="flex items-baseline col-span-1">
+                      <span className="font-bold text-[#002060] w-28 shrink-0">Address</span>
+                      <span className="font-extrabold text-slate-800 uppercase flex-1">: {student.address || student.presentVillageMohalla || '-'}</span>
+                    </div>
+                  </div>
+                  
+                  {/* Passport photo box */}
+                  <div className="relative w-20 h-24 border border-dashed border-[#002060] rounded flex items-center justify-center text-center bg-slate-50 overflow-hidden shrink-0 shadow-inner group">
+                    {activePhoto && !photoLoadError ? (
+                      <img src={activePhoto} alt="" className="w-full h-full object-cover" onError={() => setPhotoLoadError(true)} />
+                    ) : (
+                      <div className="text-[7.5px] uppercase font-bold text-slate-400 p-1 font-serif leading-tight select-none">Passport Photo</div>
+                    )}
+                    {allowEditPhoto && (
+                      <button onClick={() => fileInputRef.current?.click()} className="absolute inset-0 bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-[9px] font-bold no-print">
+                        Upload
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Nursery / KG Table with Test, Oral & Written Columns */}
+                <div className="overflow-x-auto my-4">
+                  <table className="w-full border-2 border-[#002060] text-center text-[10px] font-serif border-collapse">
+                    <thead>
+                      <tr className="border-b-2 border-[#002060]">
+                        <th rowSpan={2} className="border-r-2 border-[#002060] p-2 text-center align-middle text-slate-800 font-black w-[18%]">SUBJECT</th>
+                        <th colSpan={5} className="border-r-2 border-[#002060] p-1.5 text-center font-extrabold text-[#002060] uppercase bg-slate-50 text-[10px]">HALF YEARLY EXAM (TERM-I)</th>
+                        <th colSpan={5} className="border-r-2 border-[#002060] p-1.5 text-center font-extrabold text-[#002060] uppercase bg-slate-50 text-[10px]">ANNUAL EXAM (TERM-II)</th>
+                        <th colSpan={3} className="p-1.5 text-center font-extrabold text-[#002060] uppercase bg-slate-50 text-[10px]">FINAL EVALUATION</th>
+                      </tr>
+                      <tr className="border-b-2 border-[#002060] text-[8px] font-bold text-slate-700 bg-slate-50/50">
+                        <th className="border-r border-[#002060] p-1 w-[6%]">TEST<br/>(10)</th>
+                        <th className="border-r border-[#002060] p-1 w-[7.5%]">WRITTEN<br/>(40)</th>
+                        <th className="border-r border-[#002060] p-1 w-[7.5%] text-indigo-900 bg-indigo-50/30">ORAL<br/>(50)</th>
+                        <th className="border-r border-[#002060] p-1 w-[7%]">TOTAL<br/>(100)</th>
+                        <th className="border-r-2 border-[#002060] p-1 w-[7%] text-[#002060]">OBT.</th>
+                        <th className="border-r border-[#002060] p-1 w-[6%]">TEST<br/>(10)</th>
+                        <th className="border-r border-[#002060] p-1 w-[7.5%]">WRITTEN<br/>(40)</th>
+                        <th className="border-r border-[#002060] p-1 w-[7.5%] text-indigo-900 bg-indigo-50/30">ORAL<br/>(50)</th>
+                        <th className="border-r border-[#002060] p-1 w-[7%]">TOTAL<br/>(100)</th>
+                        <th className="border-r-2 border-[#002060] p-1 w-[7%] text-[#002060]">OBT.</th>
+                        <th className="border-r border-[#002060] p-1 w-[6.5%]">MAX</th>
+                        <th className="border-r border-[#002060] p-1 w-[7.5%] text-[#002060]">OBT.</th>
+                        <th className="p-1 w-[7.5%] text-indigo-700">GRADE</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#002060]">
+                      {subjectRows.map((sub, index) => {
+                        const hyTVal = sub.hyTestVal || 0;
+                        const hyTExists = sub.hyTestExists;
+                        const hyWVal = sub.hyExamVal || 0;
+                        const hyWExists = sub.hyExamExists;
+                        const hyOVal = sub.hyPracVal || 0;
+                        const hyOExists = sub.hyPracExists;
+                        const hyTotObtVal = hyTVal + hyWVal + hyOVal;
+
+                        const yTVal = sub.yTestVal || 0;
+                        const yTExists = sub.yTestExists;
+                        const yWVal = sub.yExamVal || 0;
+                        const yWExists = sub.yExamExists;
+                        const yOVal = sub.yPracVal || 0;
+                        const yOExists = sub.yPracExists;
+                        const yTotObtVal = yTVal + yWVal + yOVal;
+
+                        const rowFinalMax = sub.finalMax > 0 ? sub.finalMax : (sub.hasHy && sub.hasY ? 200 : (sub.hasHy || sub.hasY ? 100 : 0));
+                        const rowFinalObt = sub.finalObt;
+                        const rowPct = rowFinalMax > 0 ? (rowFinalObt / rowFinalMax) * 100 : 0;
+                        const rowGrade = sub.hasAny ? getGradeFromPercentage(rowPct) : '';
+
+                        return (
+                          <tr key={`${sub.subject}-${index}`} className="hover:bg-slate-50/20">
+                            <td className="border-r-2 border-[#002060] text-left px-2.5 py-1.5 font-extrabold uppercase text-[#002060] bg-slate-50/20">{sub.subject}</td>
+                            <td className="border-r border-[#002060] p-1 font-bold text-center font-mono">{hyTExists ? hyTVal : '-'}</td>
+                            <td className="border-r border-[#002060] p-1 font-bold text-center font-mono">{hyWExists ? hyWVal : '-'}</td>
+                            <td className="border-r border-[#002060] p-1 font-bold text-center font-mono text-indigo-900 bg-indigo-50/20">{hyOExists ? hyOVal : '-'}</td>
+                            <td className="border-r border-[#002060] p-1 font-bold text-center font-mono text-slate-500">{sub.hasHy ? 100 : ''}</td>
+                            <td className="border-r-2 border-[#002060] p-1 font-black text-center font-mono text-slate-900 bg-indigo-50/10">{sub.hasHy ? hyTotObtVal : ''}</td>
+                            <td className="border-r border-[#002060] p-1 font-bold text-center font-mono">{yTExists ? yTVal : '-'}</td>
+                            <td className="border-r border-[#002060] p-1 font-bold text-center font-mono">{yWExists ? yWVal : '-'}</td>
+                            <td className="border-r border-[#002060] p-1 font-bold text-center font-mono text-indigo-900 bg-indigo-50/20">{yOExists ? yOVal : '-'}</td>
+                            <td className="border-r border-[#002060] p-1 font-bold text-center font-mono text-slate-500">{sub.hasY ? 100 : ''}</td>
+                            <td className="border-r-2 border-[#002060] p-1 font-black text-center font-mono text-slate-900 bg-indigo-50/10">{sub.hasY ? yTotObtVal : ''}</td>
+                            <td className="border-r border-[#002060] p-1 font-bold text-center font-mono text-slate-500">{sub.hasAny ? rowFinalMax : ''}</td>
+                            <td className="border-r border-[#002060] p-1 font-black text-center font-mono text-[#002060] bg-indigo-50/25">{sub.hasAny ? rowFinalObt : ''}</td>
+                            <td className="p-1 font-black text-center text-indigo-800 bg-indigo-50/40">{rowGrade}</td>
+                          </tr>
+                        );
+                      })}
+
+                      {/* Total Row */}
+                      <tr className="font-black text-slate-900 bg-slate-100 border-t-2 border-[#002060]">
+                        <td className="border-r-2 border-[#002060] text-left px-2.5 py-2 font-black uppercase text-[#002060]">TOTAL</td>
+                        <td className="border-r border-[#002060] p-1"></td>
+                        <td className="border-r border-[#002060] p-1"></td>
+                        <td className="border-r border-[#002060] p-1"></td>
+                        <td className="border-r border-[#002060] p-1"></td>
+                        <td className="border-r-2 border-[#002060] p-1 font-mono text-slate-900">{totalHyObt > 0 ? totalHyObt : ''}</td>
+                        <td className="border-r border-[#002060] p-1"></td>
+                        <td className="border-r border-[#002060] p-1"></td>
+                        <td className="border-r border-[#002060] p-1"></td>
+                        <td className="border-r border-[#002060] p-1"></td>
+                        <td className="border-r-2 border-[#002060] p-1 font-mono text-slate-900">{totalYObt > 0 ? totalYObt : ''}</td>
+                        <td className="border-r border-[#002060] p-1 font-mono text-slate-600">{totalFinalMax > 0 ? totalFinalMax : ''}</td>
+                        <td className="border-r border-[#002060] p-1 font-mono text-[#002060] text-[11px] font-black">{totalFinalObt > 0 ? totalFinalObt : ''}</td>
+                        <td className="p-1 text-indigo-900 text-[11px] font-black">{totalFinalMax > 0 ? overallGrade : ''}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Result summary */}
+                <div className="grid grid-cols-2 gap-x-12 gap-y-2 text-[11.5px] sm:text-[12px] text-slate-900 my-4 font-serif pt-1">
+                  <div className="space-y-2">
+                    <div className="flex">
+                      <span className="font-bold text-[#002060] w-28 shrink-0">RESULT</span>
+                      <span className="font-extrabold text-slate-900">: {passed ? 'PASSED (PROMOTED)' : 'PASSED'}</span>
+                    </div>
+                    <div className="flex">
+                      <span className="font-bold text-[#002060] w-28 shrink-0">PERCENTAGE</span>
+                      <span className="font-extrabold text-slate-900">: {overallPercentage.toFixed(2)}%</span>
+                    </div>
+                    <div className="flex">
+                      <span className="font-bold text-[#002060] w-28 shrink-0">GRADE</span>
+                      <span className="font-extrabold text-slate-900">: {overallGrade}</span>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex">
+                      <span className="font-bold text-[#002060] w-28 shrink-0">REMARK</span>
+                      <span className="font-extrabold text-slate-900">: {remark}</span>
+                    </div>
+                    <div className="flex">
+                      <span className="font-bold text-[#002060] w-28 shrink-0">ATTENDANCE</span>
+                      <span className="font-extrabold text-slate-900">: {attendanceString}</span>
+                    </div>
+                    <div className="flex">
+                      <span className="font-bold text-[#002060] w-28 shrink-0">DATE</span>
+                      <span className="font-extrabold text-slate-900">: {new Date().toLocaleDateString('en-GB')}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Signatures Row */}
+                <div className="flex justify-between items-center mt-12 mb-4 px-8 text-center text-[11px] font-serif font-black text-[#002060]">
+                  <div className="flex flex-col items-center">
+                    <div className="h-9"></div>
+                    <span className="border-t border-[#002060] pt-1 px-4 uppercase tracking-wider text-[10px]">CLASS TEACHER</span>
+                  </div>
+                  <div className="flex flex-col items-center">
+                    <div className="h-9"></div>
+                    <span className="border-t border-[#002060] pt-1 px-4 uppercase tracking-wider text-[10px]">PRINCIPAL</span>
+                  </div>
                 </div>
               </>
             )}

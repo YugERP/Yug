@@ -3,7 +3,7 @@ import { useStore } from '../../store';
 import { Card, Button, Label, Input } from '../UI';
 import { type Student, type ExamMark } from '../../types';
 import { Printer, Search, Award, FileText, ChevronRight, Eye } from 'lucide-react';
-import { isSameGrade, normalizeGrade, ALL_STANDARD_CLASSES, isSameSubject, isValidPhotoUrl, isPracticalSubject } from '../../utils/gradeHelper';
+import { isSameGrade, normalizeGrade, ALL_STANDARD_CLASSES, isSameSubject, isValidPhotoUrl, isPracticalSubject, isNurseryOrKg } from '../../utils/gradeHelper';
 
 const getSchoolNameStyle = (name: string, template: 'classic_portrait' | 'landscape_new') => {
   const len = name.length;
@@ -73,7 +73,7 @@ const getAddressStyle = (address: string, template: 'classic_portrait' | 'landsc
 // Single Report Card Printable Sheet
 interface ReportCardSheetProps {
   student: Student;
-  selectedTemplate?: 'classic_portrait' | 'landscape_new';
+  selectedTemplate?: 'classic_portrait' | 'landscape_new' | 'nursery_kg';
 }
 
 function ReportCardPrintSheet({ student, selectedTemplate = 'classic_portrait' }: ReportCardSheetProps) {
@@ -927,7 +927,7 @@ export function BulkResultsPrinter() {
   const [selectedClass, setSelectedClass] = useState('Class 9');
   const [printType, setPrintType] = useState<'all' | 'single'>('all');
   const [selectedStudentId, setSelectedStudentId] = useState('');
-  const [selectedTemplate, setSelectedTemplate] = useState<'classic_portrait' | 'landscape_new'>('classic_portrait');
+  const [selectedTemplate, setSelectedTemplate] = useState<'classic_portrait' | 'landscape_new' | 'nursery_kg'>('classic_portrait');
 
   const currentSchool = schools.find(school => school.id === currentUser?.schoolId);
   const brandColor = currentSchool?.reportCardColor || '#002060';
@@ -1088,8 +1088,12 @@ export function BulkResultsPrinter() {
             as="select" 
             value={selectedClass} 
             onChange={e => {
-              setSelectedClass(e.target.value);
+              const val = e.target.value;
+              setSelectedClass(val);
               setSelectedStudentId('');
+              if (isNurseryOrKg(val)) {
+                setSelectedTemplate('nursery_kg');
+              }
             }}
           >
             {classes.map(cl => <option key={cl} value={cl}>{cl}</option>)}
@@ -1102,7 +1106,7 @@ export function BulkResultsPrinter() {
             as="select" 
             value={selectedTemplate} 
             onChange={async (e) => {
-              const val = e.target.value as 'classic_portrait' | 'landscape_new';
+              const val = e.target.value as 'classic_portrait' | 'landscape_new' | 'nursery_kg';
               setSelectedTemplate(val);
               
               // Persist selection for students to automatically display results using this exact template in their student profile!
@@ -1121,6 +1125,7 @@ export function BulkResultsPrinter() {
           >
             <option value="classic_portrait">Classic Portrait</option>
             <option value="landscape_new">Landscape Pro (New)</option>
+            <option value="nursery_kg">Nursery / KG (Oral & Written)</option>
           </Input>
         </div>
 

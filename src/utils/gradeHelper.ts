@@ -331,3 +331,12 @@ export function isValidPhotoUrl(url?: string | null): boolean {
   }
   return false;
 }
+
+/**
+ * Checks if a grade string represents Nursery, LKG, UKG, PG, or Kindergarten.
+ */
+export function isNurseryOrKg(gradeStr?: string | null): boolean {
+  if (!gradeStr) return false;
+  const norm = normalizeGrade(gradeStr).toLowerCase();
+  return norm.includes('nursery') || norm.includes('lkg') || norm.includes('ukg') || norm.includes('pg') || norm.includes('kindergarten') || norm.includes('n.c.');
+}
