@@ -15,7 +15,7 @@ import {
   isPrePrimaryGrade, isPracticalSubjectForGrade
 } from '../../utils/gradeHelper';
 
-type EntryMode = 'single-subject' | 'student-mixed' | 'class-matrix' | 'subject-annual-ledger' | 'pre-primary-junior' | 'attendance';
+type EntryMode = 'single-subject' | 'pre-primary-junior' | 'attendance';
 export type MatrixPattern = 
   | 'test-paper-i-ii' 
   | 'paper-i-ii' 
@@ -38,7 +38,6 @@ export type StudentSortOption =
 
 export type StudentMarksFilter = 'all' | 'pending' | 'completed';
 export type StudentGenderFilter = 'all' | 'Male' | 'Female';
-export type StudentSectionFilter = 'all' | string;
 
 export interface MatrixCellData {
   testObt?: number;
@@ -87,7 +86,6 @@ export function ExamResults() {
   const [sortBy, setSortBy] = useState<StudentSortOption>('roll-asc');
   const [marksFilter, setMarksFilter] = useState<StudentMarksFilter>('all');
   const [genderFilter, setGenderFilter] = useState<StudentGenderFilter>('all');
-  const [sectionFilter, setSectionFilter] = useState<StudentSectionFilter>('all');
 
   // Bulk max marks tool state for Single Subject mode
   const [bulkMaxMarksInput, setBulkMaxMarksInput] = useState<number>(10);
@@ -674,12 +672,7 @@ export function ExamResults() {
       list = list.filter(s => s.gender === genderFilter);
     }
 
-    // 2. Section Filter
-    if (sectionFilter !== 'all') {
-      list = list.filter(s => (s.section || '').trim().toLowerCase() === sectionFilter.trim().toLowerCase());
-    }
-
-    // 3. Marks Status Filter (Pending / Completed)
+    // 2. Marks Status Filter (Pending / Completed)
     if (marksFilter !== 'all') {
       list = list.filter(st => {
         const isFilled = checkStudentMarksFilled(st.id);
@@ -753,7 +746,7 @@ export function ExamResults() {
     });
 
     return list;
-  }, [classStudents, genderFilter, sectionFilter, marksFilter, searchQuery, sortBy, checkStudentMarksFilled]);
+  }, [classStudents, genderFilter, marksFilter, searchQuery, sortBy, checkStudentMarksFilled]);
 
   // -------------------------------------------------------------
   // HELPERS & HANDLERS: SINGLE SUBJECT (MODE 1)
@@ -1851,49 +1844,7 @@ export function ExamResults() {
             <span>1. एकल परीक्षा (Fast Single Exam)</span>
           </button>
 
-          {/* Mode 2: Student 4-in-1 Mixed Exams */}
-          <button
-            type="button"
-            onClick={() => setActiveMode('student-mixed')}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              activeMode === 'student-mixed'
-                ? 'bg-purple-700 text-white shadow-sm ring-2 ring-purple-300'
-                : 'bg-purple-50 text-purple-800 hover:bg-purple-100 border border-purple-200'
-            }`}
-          >
-            <Layers className="w-3.5 h-3.5" />
-            <span>2. 4-इन-1 छात्र मार्कशीट (Student 360°)</span>
-          </button>
-
-          {/* Mode 3: Class Master Grid */}
-          <button
-            type="button"
-            onClick={() => setActiveMode('class-matrix')}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              activeMode === 'class-matrix'
-                ? 'bg-blue-600 text-white shadow-sm ring-2 ring-blue-300'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            <Grid className="w-3.5 h-3.5" />
-            <span>3. कक्षा मास्टर ग्रिड (All Subjects Matrix)</span>
-          </button>
-
-          {/* Mode 4: Subject Annual Comprehensive Ledger */}
-          <button
-            type="button"
-            onClick={() => setActiveMode('subject-annual-ledger')}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              activeMode === 'subject-annual-ledger'
-                ? 'bg-teal-700 text-white shadow-sm ring-2 ring-teal-300'
-                : 'bg-teal-50 text-teal-900 hover:bg-teal-100 border border-teal-200'
-            }`}
-          >
-            <BookOpen className="w-3.5 h-3.5" />
-            <span>4. विषय-वार वार्षिक लेजर (Senior Ledger)</span>
-          </button>
-
-          {/* Mode 5: Pre-Primary / Nursery / LKG / UKG Special Mode */}
+          {/* Mode 2: Pre-Primary / Nursery / LKG / UKG Special Mode */}
           <button
             type="button"
             onClick={() => {
@@ -1909,13 +1860,13 @@ export function ExamResults() {
             }`}
           >
             <span>🎒</span>
-            <span>5. नर्सरी / LKG / UKG ग्रेडिंग (Test + Written + Oral)</span>
+            <span>2. नर्सरी / LKG / UKG ग्रेडिंग (Test + Written + Oral)</span>
             <span className="bg-amber-300 text-slate-950 text-[9px] px-1 py-0.2 rounded font-black">
               No Practical
             </span>
           </button>
 
-          {/* Mode 6: Report Card Attendance */}
+          {/* Mode 3: Report Card Attendance */}
           <button
             type="button"
             onClick={() => setActiveMode('attendance')}
@@ -1926,7 +1877,7 @@ export function ExamResults() {
             }`}
           >
             <Calendar className="w-3.5 h-3.5" />
-            <span>6. उपस्थिति लेजर (Attendance Sync)</span>
+            <span>3. उपस्थिति लेजर (Attendance Sync)</span>
           </button>
         </div>
 
@@ -1997,213 +1948,10 @@ export function ExamResults() {
             </div>
           </>
         )}
-
-        {/* Mode 3 Controls in Top Bar */}
-        {activeMode === 'class-matrix' && (
-          <>
-            <div className="w-48">
-              <Label className="font-bold text-slate-700 text-xs">Exam Scheme for Matrix</Label>
-              <Input 
-                as="select" 
-                value={examType} 
-                onChange={e => {
-                  setExamType(e.target.value as ExamType);
-                  setIsMatrixSaved(false);
-                }}
-              >
-                {examTypes.map(et => <option key={et} value={et}>{et}</option>)}
-              </Input>
-            </div>
-
-            <div className="w-48">
-              <Label className="font-bold text-slate-700 text-xs flex items-center justify-between">
-                <span>Subject View</span>
-                {matrixSubjectFilter !== 'ALL' && (
-                  <button 
-                    type="button" 
-                    onClick={() => setMatrixSubjectFilter('ALL')}
-                    className="text-[10px] text-blue-600 hover:underline cursor-pointer"
-                  >
-                    Show All
-                  </button>
-                )}
-              </Label>
-              <Input 
-                as="select" 
-                value={matrixSubjectFilter} 
-                onChange={e => setMatrixSubjectFilter(e.target.value)}
-              >
-                <option value="ALL">🌟 All Subjects (सभी विषय)</option>
-                {subjects.map(sb => {
-                  const stat = matrixSubjectStats.find(s => isSameSubject(s.subject, sb));
-                  const isDone = stat?.isComplete;
-                  return (
-                    <option key={sb} value={sb}>
-                      {sb} {isDone ? '(पूर्ण ✓)' : `(${stat?.filledStudents || 0}/${stat?.totalStudents || 0})`}
-                    </option>
-                  );
-                })}
-              </Input>
-            </div>
-
-            <div className="w-52">
-              <Label className="font-bold text-slate-700 text-xs">Pattern / Format</Label>
-              <Input 
-                as="select" 
-                value={matrixPattern} 
-                onChange={e => setMatrixPattern(e.target.value as MatrixPattern)}
-              >
-                <option value="test-paper-i-ii">🔥 Test + Paper I + II (टेस्ट + प्रथम + द्वितीय पत्र)</option>
-                <option value="paper-i-ii">📑 Paper I + II (प्रथम + द्वितीय पत्र)</option>
-                <option value="test-written-oral">📝 Test + Written + Oral (टेस्ट + लिखित + मौखिक)</option>
-                <option value="written-oral">📝 Written + Oral (लिखित + मौखिक)</option>
-                <option value="test-written-prac">🧪 Test + Written + Practical (टेस्ट + लिखित + प्रैक्टिकल)</option>
-                <option value="written-prac">🧪 Written + Practical (लिखित + प्रायोगिक)</option>
-                <option value="written-only">✏️ Written Only (केवल लिखित)</option>
-                <option value="all-composite">🌟 All-in-One (Test + I + II + Oral + Prac)</option>
-              </Input>
-            </div>
-
-            <div className="flex items-center gap-2 pb-1.5 self-end">
-              <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 cursor-pointer bg-slate-200/70 hover:bg-slate-200 px-3 py-2 rounded-lg transition-colors border border-slate-300">
-                <input 
-                  type="checkbox"
-                  checked={hideCompletedSubjects}
-                  onChange={e => setHideCompletedSubjects(e.target.checked)}
-                  className="rounded text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
-                />
-                <span className="flex items-center gap-1">
-                  {hideCompletedSubjects ? <EyeOff className="w-3.5 h-3.5 text-amber-600" /> : <Eye className="w-3.5 h-3.5 text-slate-500" />}
-                  Hide Completed ({completedSubjectsCount}/{subjects.length})
-                </span>
-              </label>
-            </div>
-          </>
-        )}
-
-        {/* Mode 4: Subject Annual Ledger Controls in Top Bar */}
-        {activeMode === 'subject-annual-ledger' && (
-          <>
-            <div className="w-56">
-              <Label className="font-bold text-slate-700 text-xs flex items-center justify-between">
-                <span className="flex items-center gap-1"><BookOpen className="w-3.5 h-3.5 text-teal-600" /> Select Subject (विषय)</span>
-                <span className="text-[10px] text-teal-700 font-bold">
-                  {subjects.indexOf(subject) + 1}/{subjects.length}
-                </span>
-              </Label>
-              <Input 
-                as="select" 
-                value={subject} 
-                onChange={e => {
-                  setSubject(e.target.value);
-                  setIsSubjectAnnualSaved(false);
-                }}
-              >
-                {subjects.map(sb => {
-                  const stat = subjectAnnualStats.find(s => isSameSubject(s.subject, sb));
-                  const isDone = stat?.isComplete;
-                  return (
-                    <option key={sb} value={sb}>
-                      {sb} {isDone ? '(पूर्ण ✓)' : `(${stat?.filledStudents || 0}/${stat?.totalStudents || 0})`}
-                    </option>
-                  );
-                })}
-              </Input>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-1.5 pb-1 self-end">
-              <label className="flex items-center gap-1 text-[11px] font-bold text-slate-700 cursor-pointer bg-slate-100 hover:bg-slate-200 px-2 py-1.5 rounded-lg border border-slate-300">
-                <input 
-                  type="checkbox"
-                  checked={showAnnualTestCols}
-                  onChange={e => setShowAnnualTestCols(e.target.checked)}
-                  className="rounded text-teal-600 focus:ring-teal-500 w-3.5 h-3.5"
-                />
-                <span>Tests (टेस्ट)</span>
-              </label>
-
-              <label className="flex items-center gap-1 text-[11px] font-bold text-slate-700 cursor-pointer bg-slate-100 hover:bg-slate-200 px-2 py-1.5 rounded-lg border border-slate-300">
-                <input 
-                  type="checkbox"
-                  checked={showAnnualOralCols}
-                  onChange={e => setShowAnnualOralCols(e.target.checked)}
-                  className="rounded text-amber-600 focus:ring-amber-500 w-3.5 h-3.5"
-                />
-                <span>मौखिक (Oral)</span>
-              </label>
-
-              <label className="flex items-center gap-1 text-[11px] font-bold text-slate-700 cursor-pointer bg-slate-100 hover:bg-slate-200 px-2 py-1.5 rounded-lg border border-slate-300">
-                <input 
-                  type="checkbox"
-                  checked={showAnnualPracCols}
-                  onChange={e => setShowAnnualPracCols(e.target.checked)}
-                  className="rounded text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5"
-                />
-                <span>प्रायोगिक (Prac)</span>
-              </label>
-
-              <label className="flex items-center gap-1 text-[11px] font-bold text-indigo-800 cursor-pointer bg-indigo-50 hover:bg-indigo-100 px-2 py-1.5 rounded-lg border border-indigo-200">
-                <input 
-                  type="checkbox"
-                  checked={syncHyAnnualMax}
-                  onChange={e => setSyncHyAnnualMax(e.target.checked)}
-                  className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"
-                />
-                <span>Sync HY & Yearly Max</span>
-              </label>
-            </div>
-          </>
-        )}
-
-        {/* Student picker for Mode 2 */}
-        {activeMode === 'student-mixed' && (
-          <div className="flex-1 min-w-[240px]">
-            <Label className="font-bold text-slate-700 text-xs flex items-center justify-between">
-              <span className="flex items-center gap-1"><User className="w-3.5 h-3.5 text-purple-600" /> Select Student</span>
-              {(filteredStudents.length > 0 ? filteredStudents : classStudents).length > 0 && (
-                <span className="text-[10px] text-slate-400 font-normal">
-                  Roll: {currentSelectedStudent?.rollNo || '-'} | SR: {currentSelectedStudent?.srNo || '-'}
-                </span>
-              )}
-            </Label>
-            <div className="flex items-center gap-1.5">
-              <Input 
-                as="select" 
-                value={selectedStudentId} 
-                onChange={e => setSelectedStudentId(e.target.value)}
-                className="flex-1 font-bold text-slate-800"
-              >
-                {(filteredStudents.length > 0 ? filteredStudents : classStudents).map(st => (
-                  <option key={st.id} value={st.id}>
-                    Roll {st.rollNo || '-'} - {st.name} ({st.fatherName ? `S/o ${st.fatherName}` : st.grade})
-                  </option>
-                ))}
-              </Input>
-              <button
-                type="button"
-                onClick={() => handleNavigateStudent('prev')}
-                disabled={(filteredStudents.length > 0 ? filteredStudents : classStudents).findIndex(s => s.id === selectedStudentId) <= 0}
-                className="p-1.5 rounded border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-                title="Previous Student"
-              >
-                <ChevronLeft className="w-4 h-4 text-slate-700" />
-              </button>
-              <button
-                type="button"
-                onClick={() => handleNavigateStudent('next')}
-                disabled={(filteredStudents.length > 0 ? filteredStudents : classStudents).findIndex(s => s.id === selectedStudentId) >= (filteredStudents.length > 0 ? filteredStudents : classStudents).length - 1}
-                className="p-1.5 rounded border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-                title="Next Student"
-              >
-                <ChevronRight className="w-4 h-4 text-slate-700" />
-              </button>
-            </div>
-          </div>
-        )}
       </Card>
 
       {/* ------------------------------------------------------------- */}
-      {/* GLOBAL STUDENT ORDERING & SMART FILTER BAR (ALL 5 MODES)      */}
+      {/* GLOBAL STUDENT ORDERING & SMART FILTER BAR                    */}
       {/* ------------------------------------------------------------- */}
       <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs space-y-2.5">
         <div className="flex flex-wrap items-center justify-between gap-2.5 pb-2 border-b border-slate-100">
@@ -2232,20 +1980,19 @@ export function ExamResults() {
                 ) : null}
               </div>
               <p className="text-[11px] text-slate-500">
-                अंक चढ़ाने हेतु छात्रों को रोल नंबर, नाम (A to Z), पिता का नाम, या केवल बाकी (Pending) छात्रों के अनुसार क्रमबद्ध करें (सभी 5 सेक्शन में लागू):
+                अंक चढ़ाने हेतु छात्रों को रोल नंबर, नाम (A to Z), पिता का नाम, या केवल बाकी (Pending) छात्रों के अनुसार क्रमबद्ध करें:
               </p>
             </div>
           </div>
 
           {/* Quick Filter Reset Button */}
-          {(sortBy !== 'roll-asc' || marksFilter !== 'all' || genderFilter !== 'all' || sectionFilter !== 'all' || searchQuery.trim() !== '') && (
+          {(sortBy !== 'roll-asc' || marksFilter !== 'all' || genderFilter !== 'all' || searchQuery.trim() !== '') && (
             <button
               type="button"
               onClick={() => {
                 setSortBy('roll-asc');
                 setMarksFilter('all');
                 setGenderFilter('all');
-                setSectionFilter('all');
                 setSearchQuery('');
               }}
               className="text-[11px] font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 px-2.5 py-1 rounded-lg border border-rose-200 flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
@@ -2344,50 +2091,31 @@ export function ExamResults() {
             </Input>
           </div>
 
-          {/* 4. Section Filter / Search Filter */}
-          {availableSections.length > 0 ? (
-            <div className="lg:col-span-3">
-              <Label className="font-bold text-slate-700 text-xs flex items-center gap-1 mb-1">
-                <span>सेक्शन (Section):</span>
-              </Label>
-              <Input
-                as="select"
-                value={sectionFilter}
-                onChange={e => setSectionFilter(e.target.value as StudentSectionFilter)}
-                className="text-xs font-semibold bg-slate-50 border-slate-300"
-              >
-                <option value="all">सभी सेक्शन (All)</option>
-                {availableSections.map(sec => (
-                  <option key={sec} value={sec}>Section {sec}</option>
-                ))}
-              </Input>
+          {/* 4. Search Filter */}
+          <div className="lg:col-span-3">
+            <Label className="font-bold text-slate-700 text-xs flex items-center gap-1 mb-1">
+              <Search className="w-3.5 h-3.5 text-slate-500" />
+              <span>खोजें (Search Student):</span>
+            </Label>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="नाम, रोल नं, पिता का नाम..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="w-full text-xs bg-white border border-slate-300 rounded-lg pl-2.5 pr-7 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-2xs"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
-          ) : (
-            <div className="lg:col-span-3">
-              <Label className="font-bold text-slate-700 text-xs flex items-center gap-1 mb-1">
-                <Search className="w-3.5 h-3.5 text-slate-500" />
-                <span>खोजें (Search Student):</span>
-              </Label>
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder="नाम, रोल नं, पिता का नाम..."
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  className="w-full text-xs bg-white border border-slate-300 rounded-lg pl-2.5 pr-7 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-2xs"
-                />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
+          </div>
         </div>
 
         {/* Quick Switch Chips for sorting */}
@@ -2461,27 +2189,6 @@ export function ExamResults() {
               👧 Girls ➔ Boys
             </button>
           </div>
-
-          {availableSections.length > 0 && (
-            <div className="relative min-w-[200px] flex-1 max-w-xs">
-              <input
-                type="text"
-                placeholder="नाम, रोल नं, पिता का नाम..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="w-full text-xs bg-white border border-slate-300 rounded-lg pl-2.5 pr-7 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-2xs"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-          )}
         </div>
       </div>
 
