@@ -299,8 +299,22 @@ export function TcCcGenerator() {
     
     const startYearNum = parseInt(timelineStartYear, 10) || 2020;
     
-    const newRows = classesList.map((cls, idx) => {
-      if (idx >= startIdx && idx <= endIdx) {
+    setGridRows(prevRows => {
+      // Create a base from existing rows if they exist, otherwise initialize
+      const baseRows = prevRows.length === classesList.length ? [...prevRows] : classesList.map((cls, idx) => ({
+          id: String(idx),
+          classLabel: cls,
+          admDate: '',
+          promDate: '',
+          remDate: '',
+          cause: '',
+          year: '',
+          conduct: '',
+          work: '',
+          sign: ''
+      }));
+
+      for (let idx = startIdx; idx <= endIdx; idx++) {
         const diff = idx - startIdx;
         const classStartYear = startYearNum + diff;
         const classEndYear = classStartYear + 1;
@@ -321,9 +335,8 @@ export function TcCcGenerator() {
           cause = timelineRemovalCause;
         }
         
-        return {
-          id: String(idx),
-          classLabel: cls,
+        baseRows[idx] = {
+          ...baseRows[idx],
           admDate,
           promDate,
           remDate,
@@ -331,25 +344,26 @@ export function TcCcGenerator() {
           year: yearStr,
           conduct: 'Uttam / उत्तम',
           work: 'Sreshtha / श्रेष्ठ',
-          sign: ''
-        };
-      } else {
-        return {
-          id: String(idx),
-          classLabel: cls,
-          admDate: '',
-          promDate: '',
-          remDate: '',
-          cause: '',
-          year: '',
-          conduct: '',
-          work: '',
-          sign: ''
         };
       }
+      return baseRows;
     });
-    
-    setGridRows(newRows);
+  };
+
+  const clearTimelineData = () => {
+    const classesList = ['Nursery', 'L.K.G', 'U.K.G', 'Class I', 'Class II', 'Class III', 'Class IV', 'Class V', 'Class VI', 'Class VII', 'Class VIII', 'Class IX', 'Class X', 'Class XI', 'Class XII'];
+    setGridRows(classesList.map((cls, idx) => ({
+        id: String(idx),
+        classLabel: cls,
+        admDate: '',
+        promDate: '',
+        remDate: '',
+        cause: '',
+        year: '',
+        conduct: '',
+        work: '',
+        sign: ''
+    })));
   };
 
   const filteredStudents = students.filter(s => 
@@ -733,13 +747,22 @@ export function TcCcGenerator() {
               <Label>Removal Cause (निष्कासन कारण)</Label>
               <Input value={timelineRemovalCause} onChange={e => setTimelineRemovalCause(e.target.value)} />
             </div>
-            <Button 
-              type="button" 
-              onClick={generateTimelineData} 
-              className="w-full mt-2 bg-amber-600 hover:bg-amber-700 text-white font-bold py-1 px-2 text-xs rounded shadow flex items-center justify-center gap-1.5"
-            >
-              <span>⚡ Auto-fill Class Grid (सत्र स्वतः भरें)</span>
-            </Button>
+            <div className="flex gap-2 mt-2">
+              <Button 
+                type="button" 
+                onClick={generateTimelineData} 
+                className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold py-1 px-2 text-xs rounded shadow flex items-center justify-center gap-1.5"
+              >
+                <span>⚡ Auto-fill Add/Update</span>
+              </Button>
+              <Button 
+                type="button" 
+                onClick={clearTimelineData} 
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-2 text-xs rounded shadow flex items-center justify-center gap-1.5"
+              >
+                <span>🗑️ Clear Grid</span>
+              </Button>
+            </div>
           </div>
         )}
       </Card>
