@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { User, Student, Teacher, ParentAccount, Homework, ExamMark, FeeRecord, Issue, Role, School, AttendanceRecord, NotificationLog, SessionRequest, AttendanceRequest } from './types';
 import { doc, setDoc, deleteDoc, updateDoc, onSnapshot, getDoc, collection, query, where } from 'firebase/firestore';
 import { db } from './firebase';
-import { isSameSubject, normalizeSubject } from './utils/gradeHelper';
+import { isSameSubject, normalizeSubject, isSameGrade, normalizeGrade } from './utils/gradeHelper';
 
 // Helper to safely read from localStorage
 const getLocalStorageItem = <T,>(key: string, defaultValue: T): T => {
@@ -204,6 +204,7 @@ interface StoreContextType extends StoreState {
   addStudent: (student: Student) => void;
   importStudents: (students: Student[]) => void;
   deleteStudent: (id: string) => void;
+  resequenceRollNumbers: (grade: string, session?: string, section?: string) => Promise<number>;
   restoreStudent: (id: string) => void;
   hardDeleteStudent: (id: string) => void;
   deleteAllStudentsInSchool: (schoolId: string) => Promise<void>;
@@ -672,8 +673,62 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const deleteStudent = async (id: string) => {
     try {
+      // Find the student to be deleted before removal to inspect class and roll number
+      const studentToDelete = students.find(s => s.id === id);
+
+      // Collect subsequent students in the same class whose roll numbers need to shift down
+      const studentsToShift: Student[] = [];
+
+      if (studentToDelete && studentToDelete.rollNo) {
+        const deletedRoll = parseInt(String(studentToDelete.rollNo).trim(), 10);
+        if (!isNaN(deletedRoll) && deletedRoll > 0) {
+          const targetGrade = studentToDelete.grade;
+          const targetSchoolId = studentToDelete.schoolId;
+          const targetSession = studentToDelete.academicSession;
+          const targetSection = (studentToDelete.section || 'A').trim().toUpperCase();
+
+          // Find other active students in the exact same class, session, school and section
+          const sameClassRemaining = students.filter(s => {
+            if (s.id === id || s.isDeleted) return false;
+            if (!isSameGrade(s.grade, targetGrade)) return false;
+            if (targetSchoolId && s.schoolId && s.schoolId !== targetSchoolId) return false;
+            if (targetSession && s.academicSession && s.academicSession !== targetSession) return false;
+            const sSec = (s.section || 'A').trim().toUpperCase();
+            if (targetSection && sSec && sSec !== targetSection) return false;
+            return true;
+          });
+
+          // Any student whose numeric roll number was greater than deletedRoll decrements by 1 (e.g. 4 -> 3, 5 -> 4)
+          sameClassRemaining.forEach(s => {
+            const currRoll = parseInt(String(s.rollNo || '').trim(), 10);
+            if (!isNaN(currRoll) && currRoll > deletedRoll) {
+              const updatedRollNo = String(currRoll - 1);
+              const updatedHistory = s.academicHistory?.map(h => {
+                if (targetSession && h.academicSession === targetSession) {
+                  return { ...h, rollNo: updatedRollNo };
+                }
+                return h;
+              });
+
+              studentsToShift.push({
+                ...s,
+                rollNo: updatedRollNo,
+                ...(updatedHistory ? { academicHistory: updatedHistory } : {})
+              });
+            }
+          });
+        }
+      }
+
       // Optimistic local state updates for instantaneous responsiveness
-      setStudents(prev => prev.filter(s => s.id !== id));
+      const shiftedMap = new Map<string, Student>();
+      studentsToShift.forEach(s => shiftedMap.set(s.id, s));
+
+      setStudents(prev => {
+        return prev
+          .filter(s => s.id !== id)
+          .map(s => shiftedMap.get(s.id) || s);
+      });
       setMarks(prev => prev.filter(m => m.studentId !== id));
       setFeeRecords(prev => prev.filter(f => f.studentId !== id));
       setAttendances(prev => prev.filter(a => a.studentId !== id && a.userId !== id));
@@ -681,6 +736,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       // Direct, permanent deletion from Firestore database
       await deleteDoc(doc(db, 'students', id));
+
+      // Update shifted students' roll numbers in Firestore database
+      for (const shifted of studentsToShift) {
+        const updatePayload: Record<string, any> = { rollNo: shifted.rollNo };
+        if (shifted.academicHistory) {
+          updatePayload.academicHistory = shifted.academicHistory;
+        }
+        await updateDoc(doc(db, 'students', shifted.id), updatePayload).catch(err => {
+          console.error(`Failed to update roll number for student ${shifted.id}:`, err);
+        });
+      }
 
       // Also clean up any associated student marks, fee payments, and attendance records from Firestore
       const relatedMarks = marks.filter(m => m.studentId === id);
@@ -701,6 +767,86 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, `students/${id}`);
+    }
+  };
+
+  const resequenceRollNumbers = async (grade: string, session?: string, section?: string): Promise<number> => {
+    try {
+      const targetSession = session || activeAcademicSession;
+      const targetSection = section ? section.trim().toUpperCase() : '';
+
+      const classStudents = students.filter(s => {
+        if (s.isDeleted) return false;
+        if (!isSameGrade(s.grade, grade)) return false;
+        if (effectiveSchoolId && s.schoolId && s.schoolId !== effectiveSchoolId) return false;
+        if (targetSession && s.academicSession && s.academicSession !== targetSession) return false;
+        if (targetSection) {
+          const sSec = (s.section || 'A').trim().toUpperCase();
+          if (sSec !== targetSection) return false;
+        }
+        return true;
+      });
+
+      if (classStudents.length === 0) return 0;
+
+      const sorted = [...classStudents].sort((a, b) => {
+        const rA = parseInt(String(a.rollNo || '').trim(), 10);
+        const rB = parseInt(String(b.rollNo || '').trim(), 10);
+        if (!isNaN(rA) && !isNaN(rB) && rA !== rB) return rA - rB;
+        const srA = parseInt(String(a.srNo || '').trim(), 10);
+        const srB = parseInt(String(b.srNo || '').trim(), 10);
+        if (!isNaN(srA) && !isNaN(srB) && srA !== srB) return srA - srB;
+        return (a.name || '').localeCompare(b.name || '');
+      });
+
+      const updatedMap = new Map<string, string>();
+      sorted.forEach((s, idx) => {
+        const newRoll = String(idx + 1);
+        if (String(s.rollNo || '').trim() !== newRoll) {
+          updatedMap.set(s.id, newRoll);
+        }
+      });
+
+      if (updatedMap.size === 0) return 0;
+
+      setStudents(prev => prev.map(s => {
+        if (updatedMap.has(s.id)) {
+          const newRoll = updatedMap.get(s.id)!;
+          const updatedHistory = s.academicHistory?.map(h => {
+            if (targetSession && h.academicSession === targetSession) {
+              return { ...h, rollNo: newRoll };
+            }
+            return h;
+          });
+          return {
+            ...s,
+            rollNo: newRoll,
+            ...(updatedHistory ? { academicHistory: updatedHistory } : {})
+          };
+        }
+        return s;
+      }));
+
+      for (const [id, rollNo] of updatedMap.entries()) {
+        const currentStudent = classStudents.find(s => s.id === id);
+        const updatePayload: Record<string, any> = { rollNo };
+        if (currentStudent?.academicHistory) {
+          updatePayload.academicHistory = currentStudent.academicHistory.map(h => {
+            if (targetSession && h.academicSession === targetSession) {
+              return { ...h, rollNo };
+            }
+            return h;
+          });
+        }
+        await updateDoc(doc(db, 'students', id), updatePayload).catch(err => {
+          console.error(`Failed to update rollNo for ${id}:`, err);
+        });
+      }
+
+      return updatedMap.size;
+    } catch (err) {
+      console.error('Error in resequenceRollNumbers:', err);
+      return 0;
     }
   };
 
@@ -1266,7 +1412,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       homeworks: filteredHomeworks, marks: filteredMarks, allMarks: rawSchoolMarks, feeRecords: filteredFeeRecords, allFeeRecords: rawSchoolFeeRecords, 
       issues: filteredIssues, attendances, notificationLogs, currentUser, classFees: currentClassFees, activeAcademicSession, academicSessions, allowedSessions,
       sessionRequests, attendanceRequests, parentAccounts: filteredParentAccounts,
-      login, logout, setActiveAcademicSession, addAcademicSession, editAcademicSession, deleteAcademicSession, setAllowedSessions, addSchool, updateSchool, updateSchoolFeatures, deleteSchool, addStudent, importStudents, deleteStudent, restoreStudent, hardDeleteStudent, deleteAllStudentsInSchool, updateStudent, addTeacher, 
+      login, logout, setActiveAcademicSession, addAcademicSession, editAcademicSession, deleteAcademicSession, setAllowedSessions, addSchool, updateSchool, updateSchoolFeatures, deleteSchool, addStudent, importStudents, deleteStudent, resequenceRollNumbers, restoreStudent, hardDeleteStudent, deleteAllStudentsInSchool, updateStudent, addTeacher, 
       deleteTeacher, addClerk, deleteClerk, addParentAccount, updateParentAccount, deleteParentAccount, addHomework, addMark, importMarks, deleteMark, deleteSubjectMarks, deleteStudentAllMarks, addFeePayment, importFeeRecords, deleteFeePayment, 
       addIssue, resolveIssue, setClassFee, setClassFeesBatch, getStudentBalance, saveAttendance, addNotificationLog,
       requestSessionApproval, approveSessionRequest, deleteSessionRequest,

@@ -23,7 +23,8 @@ import {
   X,
   ShieldCheck,
   CheckCheck,
-  UploadCloud
+  UploadCloud,
+  RefreshCw
 } from 'lucide-react';
 import type { Student, Teacher, User, ExamMark } from '../types';
 import { StudentReportCard } from '../components/StudentReportCard';
@@ -61,6 +62,7 @@ export function AdminPanel() {
     deleteAcademicSession, 
     importStudents, 
     deleteStudent, 
+    resequenceRollNumbers,
     addTeacher, 
     deleteTeacher, 
     resolveIssue, 
@@ -140,6 +142,18 @@ export function AdminPanel() {
     const cPass = studentClassFilter === 'All' ? true : isSameGrade(s.grade, studentClassFilter);
     return sPass && cPass;
   });
+
+  if (studentClassFilter !== 'All') {
+    filteredDirectoryStudents.sort((a, b) => {
+      const rA = parseInt(String(a.rollNo || '').trim(), 10);
+      const rB = parseInt(String(b.rollNo || '').trim(), 10);
+      if (!isNaN(rA) && !isNaN(rB) && rA !== rB) return rA - rB;
+      const srA = parseInt(String(a.srNo || '').trim(), 10);
+      const srB = parseInt(String(b.srNo || '').trim(), 10);
+      if (!isNaN(srA) && !isNaN(srB) && srA !== srB) return srA - srB;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+  }
 
   if (studentSearch === '' && studentClassFilter === 'All') {
     filteredDirectoryStudents = filteredDirectoryStudents.slice(0, 50);
@@ -1049,7 +1063,23 @@ export function AdminPanel() {
                     </div>
                   </div>
 
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {studentClassFilter !== 'All' && (
+                      <Button 
+                        type="button" 
+                        onClick={async () => {
+                          if (window.confirm(`क्या आप ${studentClassFilter} के सभी विद्यार्थियों के रोल नंबर 1, 2, 3... क्रमानुसार व्यवस्थित करना चाहते हैं?`)) {
+                            const count = await resequenceRollNumbers(studentClassFilter);
+                            alert(`कक्षा ${studentClassFilter} के रोल नंबर क्रमानुसार सेट हो गए हैं! (${count} रोल नंबर अपडेट हुए)`);
+                          }
+                        }}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-3 py-1.5 h-auto flex items-center gap-1.5 shadow-sm"
+                        title="Re-sequence roll numbers to 1, 2, 3... to remove any gaps"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Re-sequence Roll No (1, 2, 3...)</span>
+                      </Button>
+                    )}
                     <Button type="button" onClick={handleStudentsCsvExport} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1.5 h-auto">Export CSV</Button>
                     <Label className="cursor-pointer bg-slate-100 text-slate-700 border border-slate-300 hover:bg-slate-200 text-xs px-3 py-1.5 rounded mb-0">
                       Import CSV
@@ -1136,7 +1166,7 @@ export function AdminPanel() {
                               </button>
                               <button 
                                 onClick={() => {
-                                  if (window.confirm(`Are you absolutely sure you want to permanently delete the registrar file of ${st.name}? This action is irreversible!`)) {
+                                  if (window.confirm(`क्या आप छात्र "${st.name}" (रोल नं: ${st.rollNo || 'N/A'}) का रिकॉर्ड हटाना चाहते हैं? इसके बाद के सभी छात्रों के रोल नंबर स्वतः एक-एक कम होकर क्रमानुसार (4->3, 5->4) ठीक हो जाएंगे।`)) {
                                     deleteStudent(st.id);
                                   }
                                 }} 

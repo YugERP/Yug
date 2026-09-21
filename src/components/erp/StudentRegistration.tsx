@@ -3,6 +3,7 @@ import { useStore } from '../../store';
 import { Card, Button, Label, Input } from '../UI';
 import { type Student } from '../../types';
 import { Sparkles, Save, User as UserIcon, Shield, MapPin, BookOpen, FileText, Check } from 'lucide-react';
+import { isSameGrade } from '../../utils/gradeHelper';
 
 const CLASSES = ['Nursery', 'L.K.G', 'U.K.G', 'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5', 'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10', 'Class 11', 'Class 12'];
 const SECTIONS = ['A', 'B', 'C', 'D'];
@@ -95,8 +96,12 @@ export function StudentRegistration({ onSuccess, onCancel, studentToEdit }: Stud
 
   // Calculate next Roll Number & Admission/SR Number
   const getNextNumbers = (grade: string) => {
-    const classStudents = students.filter(s => s.grade === grade);
-    const nextRoll = classStudents.length + 1;
+    const classStudents = students.filter(s => !s.isDeleted && isSameGrade(s.grade, grade) && (!currentSchool?.id || !s.schoolId || s.schoolId === currentSchool.id));
+    const maxRoll = classStudents.reduce((max, s) => {
+      const r = parseInt(String(s.rollNo || '').trim(), 10);
+      return !isNaN(r) && r > max ? r : max;
+    }, 0);
+    const nextRoll = Math.max(classStudents.length, maxRoll) + 1;
     
     // Use school config if available, else default to old logic
     const nextSR = currentSchool?.nextSrNo || (1000 + students.length + 1);
