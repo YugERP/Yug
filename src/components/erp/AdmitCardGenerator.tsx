@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../../store';
 import { Card, Button, Label, Input } from '../UI';
-import { Printer, Upload, Image as ImageIcon, Trash2, Info, CheckCircle2, Sliders, Eye, Sparkles, LayoutTemplate, Layers, AlertCircle } from 'lucide-react';
+import { Printer, Upload, Image as ImageIcon, Trash2, Info, CheckCircle2, Sliders, Eye, Sparkles, LayoutTemplate, Layers, AlertCircle, FileText, Check } from 'lucide-react';
 import { type Student } from '../../types';
 import { normalizeGrade, isSameGrade, ALL_STANDARD_CLASSES, isValidPhotoUrl } from '../../utils/gradeHelper';
 
 export function AdmitCardGenerator() {
-  const { students, schools, currentUser, activeAcademicSession } = useStore();
+  const { students, schools, currentUser, activeAcademicSession, updateSchool } = useStore();
   const [selectedSession, setSelectedSession] = useState<string>('All');
   const [selectedClass, setSelectedClass] = useState('');
   const [examType, setExamType] = useState('Half Yearly');
@@ -15,6 +15,37 @@ export function AdmitCardGenerator() {
   const [printLayout, setPrintLayout] = useState<'portrait' | 'landscape'>('landscape');
   const [template, setTemplate] = useState<'normal' | 'watermark' | 'custom'>('normal');
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
+
+  const currentSchool = schools.find(school => school.id === currentUser?.schoolId) || schools[0];
+
+  // Principal Signature State & Storage
+  const sigStorageKey = `sch_admit_card_principal_sig_${currentSchool?.id || 'default'}`;
+  const sigHeightKey = `sch_admit_card_sig_height_${currentSchool?.id || 'default'}`;
+  const sigEnabledKey = `sch_admit_card_sig_enabled_${currentSchool?.id || 'default'}`;
+
+  const [principalSig, setPrincipalSig] = useState<string>(() => {
+    return currentSchool?.principalSignature || localStorage.getItem(sigStorageKey) || '';
+  });
+  const [sigHeight, setSigHeight] = useState<number>(() => {
+    const saved = localStorage.getItem(sigHeightKey);
+    return saved ? parseInt(saved, 10) : 28;
+  });
+  const [sigEnabled, setSigEnabled] = useState<boolean>(() => {
+    const saved = localStorage.getItem(sigEnabledKey);
+    return saved !== null ? saved === 'true' : true;
+  });
+  const [isSavingSig, setIsSavingSig] = useState<boolean>(false);
+  const signatureInputRef = useRef<HTMLInputElement>(null);
+
+  // Sync if school's principalSignature updates in database
+  useEffect(() => {
+    if (currentSchool?.principalSignature) {
+      setPrincipalSig(currentSchool.principalSignature);
+      try {
+        localStorage.setItem(sigStorageKey, currentSchool.principalSignature);
+      } catch (e) {}
+    }
+  }, [currentSchool?.principalSignature, sigStorageKey]);
 
   // Custom Template State
   const [customTemplateImg, setCustomTemplateImg] = useState<string>(() => {
@@ -34,7 +65,87 @@ export function AdmitCardGenerator() {
   const [showDimensionGuide, setShowDimensionGuide] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const currentSchool = schools.find(school => school.id === currentUser?.schoolId);
+
+  // Handle Principal Signature Upload
+  const handleSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('कृपया केवल इमेज फाइल (PNG, JPG, JPEG, WEBP) ही अपलोड करें।');
+      return;
+    }
+
+    if (file.size > 3 * 1024 * 1024) {
+      alert('हस्ताक्षर फाइल का साइज़ 3MB से कम होना चाहिए।');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (uploadEvent) => {
+      const result = uploadEvent.target?.result as string;
+      if (result) {
+        setPrincipalSig(result);
+        setSigEnabled(true);
+        try {
+          localStorage.setItem(sigStorageKey, result);
+          localStorage.setItem(sigEnabledKey, 'true');
+        } catch (err) {
+          console.warn('Could not store signature in localStorage', err);
+        }
+
+        if (currentSchool?.id) {
+          setIsSavingSig(true);
+          try {
+            await updateSchool(currentSchool.id, { principalSignature: result });
+          } catch (err) {
+            console.error('Failed to save principal signature to database:', err);
+          } finally {
+            setIsSavingSig(false);
+          }
+        }
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveSignature = async () => {
+    if (!window.confirm('क्या आप प्रधानाचार्य के डिजिटल हस्ताक्षर हटाना चाहते हैं? इसके बाद एडमिट कार्ड पर खाली पेन साइन स्पेस आ जाएगा।')) {
+      return;
+    }
+
+    setPrincipalSig('');
+    try {
+      localStorage.removeItem(sigStorageKey);
+    } catch (e) {}
+
+    if (signatureInputRef.current) signatureInputRef.current.value = '';
+
+    if (currentSchool?.id) {
+      setIsSavingSig(true);
+      try {
+        await updateSchool(currentSchool.id, { principalSignature: '' });
+      } catch (err) {
+        console.error('Failed to clear principal signature from database:', err);
+      } finally {
+        setIsSavingSig(false);
+      }
+    }
+  };
+
+  const updateSigHeight = (val: number) => {
+    setSigHeight(val);
+    try {
+      localStorage.setItem(sigHeightKey, val.toString());
+    } catch (e) {}
+  };
+
+  const toggleSigEnabled = (val: boolean) => {
+    setSigEnabled(val);
+    try {
+      localStorage.setItem(sigEnabledKey, val.toString());
+    } catch (e) {}
+  };
 
   // Measure uploaded template dimensions
   useEffect(() => {
@@ -338,7 +449,7 @@ export function AdmitCardGenerator() {
             </div>
 
             {/* Photo & Signature Box */}
-            <div className="w-20 print:w-20 flex flex-col items-center justify-start shrink-0">
+            <div className="w-20 print:w-20 flex flex-col items-center justify-between shrink-0">
               <div className="w-[72px] h-[88px] print:w-[64px] print:h-[78px] border-2 border-slate-900 flex items-center justify-center bg-white text-[10px] text-slate-400 overflow-hidden shrink-0 shadow-2xs">
                 {isValidPhotoUrl(student.docStudentPhoto || student.photoUrl) ? (
                   <img 
@@ -355,8 +466,30 @@ export function AdmitCardGenerator() {
                   </div>
                 )}
               </div>
-              <div className="w-full mt-2 print:mt-1 border-t-2 border-slate-900 text-center text-[9px] print:text-[8px] font-black text-slate-900 pt-0.5 uppercase tracking-tighter">
-                PRINCIPAL SIGN
+
+              {/* Principal Signature below photo */}
+              <div className="w-full mt-1 print:mt-0.5 flex flex-col items-center justify-end">
+                {sigEnabled && principalSig ? (
+                  <div 
+                    className="w-full flex items-center justify-center overflow-hidden"
+                    style={{ height: `${sigHeight}px` }}
+                  >
+                    <img 
+                      src={principalSig} 
+                      alt="Principal Signature" 
+                      className="max-h-full max-w-full object-contain mix-blend-multiply select-none"
+                      style={{ 
+                        WebkitPrintColorAdjust: 'exact', 
+                        printColorAdjust: 'exact' 
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div className="h-6 print:h-5 w-full" />
+                )}
+                <div className="w-full border-t-2 border-slate-900 text-center text-[9px] print:text-[8px] font-black text-slate-900 pt-0.5 uppercase tracking-tighter leading-none">
+                  PRINCIPAL SIGN
+                </div>
               </div>
             </div>
           </div>
@@ -433,7 +566,7 @@ export function AdmitCardGenerator() {
       ` }} />
 
       {/* Top Configuration Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 no-print">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 no-print">
         {/* Card 1: Exam & Class Setup */}
         <Card className="p-4 bg-slate-50/70 border border-slate-200 shadow-2xs space-y-3.5">
           <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
@@ -561,13 +694,139 @@ export function AdmitCardGenerator() {
           </div>
         </Card>
 
-        {/* Card 2: Custom Template Uploader & Style Selection */}
+        {/* Card 2: Principal Signature Uploader */}
+        <Card className="p-4 bg-slate-50/70 border border-slate-200 shadow-2xs space-y-3.5">
+          <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+            <div className="flex items-center gap-2">
+              <FileText className="w-4 h-4 text-purple-600" />
+              <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                2. Principal Signature
+              </h3>
+            </div>
+            <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${
+              principalSig && sigEnabled
+                ? 'bg-purple-100 text-purple-800' 
+                : 'bg-slate-200 text-slate-600'
+            }`}>
+              {principalSig && sigEnabled ? 'Digital Sign Active' : 'Manual Pen Sign'}
+            </span>
+          </div>
+
+          <div className="space-y-3 pt-1">
+            <input 
+              type="file" 
+              ref={signatureInputRef}
+              accept="image/png, image/jpeg, image/webp" 
+              onChange={handleSignatureUpload}
+              className="hidden" 
+              id="principalSignatureUploadInput"
+            />
+
+            {principalSig ? (
+              <div className="space-y-2.5">
+                {/* Live Preview Box */}
+                <div className="p-2.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex justify-between items-center">
+                    <span>हस्ताक्षर प्रीव्यू (Preview):</span>
+                    {isSavingSig && <span className="text-[9px] text-indigo-600 font-bold animate-pulse">Saving...</span>}
+                  </div>
+                  <div className="h-14 w-full bg-slate-50 rounded border border-dashed border-slate-300 flex flex-col items-center justify-center p-1 relative overflow-hidden">
+                    <img 
+                      src={principalSig} 
+                      alt="Principal Signature" 
+                      className="max-h-full max-w-full object-contain mix-blend-multiply select-none" 
+                    />
+                  </div>
+                  <div className="text-center text-[9px] font-black text-slate-700 mt-1 border-t border-slate-300 pt-0.5 tracking-wider uppercase">
+                    PRINCIPAL SIGN
+                  </div>
+                </div>
+
+                {/* Actions: Replace / Remove */}
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => signatureInputRef.current?.click()}
+                    className="flex-1 text-xs bg-purple-50 text-purple-700 hover:bg-purple-100 py-1.5 px-2 rounded-lg font-bold flex items-center justify-center gap-1.5 border border-purple-200 transition-colors"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    बदलें (Replace)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRemoveSignature}
+                    className="flex-1 text-xs bg-rose-50 text-rose-700 hover:bg-rose-100 py-1.5 px-2 rounded-lg font-bold flex items-center justify-center gap-1.5 border border-rose-200 transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    हटाएं (Remove)
+                  </button>
+                </div>
+
+                {/* Fine tune controls: Height slider & Enable toggle */}
+                <div className="p-2 bg-slate-100/70 rounded-lg border border-slate-200 space-y-2">
+                  <label className="flex items-center gap-2 text-[11px] font-bold text-slate-800 cursor-pointer">
+                    <input 
+                      type="checkbox"
+                      checked={sigEnabled}
+                      onChange={e => toggleSigEnabled(e.target.checked)}
+                      className="rounded text-purple-600"
+                    />
+                    <span>एडमिट कार्ड पर डिजिटल साइन प्रिंट करें</span>
+                  </label>
+
+                  <div>
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-600 mb-1">
+                      <span className="flex items-center gap-1">
+                        <Sliders className="w-3 h-3 text-slate-500" />
+                        साइज / ऊंचाई (Height):
+                      </span>
+                      <span className="text-purple-700 font-mono font-bold">{sigHeight} px</span>
+                    </div>
+                    <input 
+                      type="range" 
+                      min="18" 
+                      max="45" 
+                      value={sigHeight}
+                      onChange={e => updateSigHeight(parseInt(e.target.value, 10))}
+                      className="w-full h-1.5 bg-slate-300 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="border-2 border-dashed border-purple-200 hover:border-purple-400 bg-white rounded-xl p-3.5 text-center transition-all">
+                <label htmlFor="principalSignatureUploadInput" className="cursor-pointer block space-y-2">
+                  <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-full flex items-center justify-center mx-auto shadow-2xs">
+                    <Upload className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-black text-purple-800 hover:underline block">
+                      प्रधानाचार्य हस्ताक्षर अपलोड करें
+                    </span>
+                    <span className="text-[10px] text-slate-500 block mt-0.5">
+                      PNG / JPG (सफेद कागज पर साइन)
+                    </span>
+                  </div>
+                  <span className="inline-block bg-purple-600 text-white text-[10px] font-bold px-3 py-1 rounded-md shadow-2xs hover:bg-purple-700 transition-colors">
+                    Upload Signature
+                  </span>
+                </label>
+              </div>
+            )}
+
+            <div className="bg-purple-50/60 p-2 rounded-lg border border-purple-100 text-[10px] text-purple-950 leading-tight">
+              💡 <b>ऑटोमैटिक:</b> हस्ताक्षर अपलोड होते ही यह सभी छात्रों के प्रवेश पत्र पर फोटो के ठीक नीचे स्वतः छप जाएगा। अलग से पेन से साइन नहीं करना पड़ेगा।
+            </div>
+          </div>
+        </Card>
+
+        {/* Card 3: Custom Template Uploader & Style Selection */}
         <Card className="p-4 bg-slate-50/70 border border-slate-200 shadow-2xs space-y-3.5">
           <div className="flex items-center justify-between border-b border-slate-200 pb-2">
             <div className="flex items-center gap-2">
               <LayoutTemplate className="w-4 h-4 text-emerald-600" />
               <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">
-                2. Template Choice & Upload
+                3. Template Choice & Upload
               </h3>
             </div>
             <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-bold">
@@ -721,13 +980,13 @@ export function AdmitCardGenerator() {
           </div>
         </Card>
 
-        {/* Card 3: Exact Dimensions & Mapping Guidelines */}
+        {/* Card 4: Exact Dimensions & Mapping Guidelines */}
         <Card className="p-4 bg-gradient-to-br from-indigo-50/60 to-purple-50/60 border border-indigo-100 shadow-2xs space-y-3">
           <div className="flex items-center justify-between border-b border-indigo-100 pb-2">
             <div className="flex items-center gap-1.5">
               <Info className="w-4 h-4 text-indigo-700" />
               <h3 className="text-xs font-black text-indigo-950 uppercase tracking-wider">
-                3. Size & Mapping Guide (माप निर्देश)
+                4. Size & Mapping Guide (माप निर्देश)
               </h3>
             </div>
             <span className="text-[10px] bg-indigo-200/70 text-indigo-900 px-2 py-0.5 rounded font-black">

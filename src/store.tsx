@@ -579,6 +579,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       
       // Update school itself
       if (Object.keys(schoolUpdates).length > 0) {
+        setSchools(prev => prev.map(s => s.id === id ? { ...s, ...schoolUpdates } : s));
         await updateDoc(doc(db, 'schools', id), schoolUpdates);
       }
 

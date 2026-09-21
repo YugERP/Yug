@@ -12,6 +12,7 @@ export interface School {
   features?: string[]; // Allowed module features
   logo?: string;
   reportCardColor?: string; // Hex color or named color for report cards, e.g., '#002060'
+  principalSignature?: string; // Principal signature data URL or image URL
   nextAdmissionNo?: number;
   nextSrNo?: number;
   nextReceiptNo?: number;
