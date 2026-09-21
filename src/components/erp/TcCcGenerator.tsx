@@ -140,6 +140,14 @@ export function TcCcGenerator() {
     conduct: string;
     work: string;
     sign: string;
+    admDate2: string;
+    promDate2: string;
+    remDate2: string;
+    cause2: string;
+    year2: string;
+    conduct2: string;
+    work2: string;
+    sign2: string;
   }[]>([]);
 
   // Timeline Generator states
@@ -249,7 +257,15 @@ export function TcCcGenerator() {
           year: isCurrentClass ? '2025-26' : '',
           conduct: isCurrentClass ? 'Uttam / उत्तम' : '',
           work: isCurrentClass ? 'Sreshtha / श्रेष्ठ' : '',
-          sign: ''
+          sign: '',
+          admDate2: '',
+          promDate2: '',
+          remDate2: '',
+          cause2: '',
+          year2: '',
+          conduct2: '',
+          work2: '',
+          sign2: ''
         };
       });
       setGridRows(rows);
@@ -311,7 +327,15 @@ export function TcCcGenerator() {
           year: '',
           conduct: '',
           work: '',
-          sign: ''
+          sign: '',
+          admDate2: '',
+          promDate2: '',
+          remDate2: '',
+          cause2: '',
+          year2: '',
+          conduct2: '',
+          work2: '',
+          sign2: ''
       }));
 
       for (let idx = startIdx; idx <= endIdx; idx++) {
@@ -362,7 +386,15 @@ export function TcCcGenerator() {
         year: '',
         conduct: '',
         work: '',
-        sign: ''
+        sign: '',
+        admDate2: '',
+        promDate2: '',
+        remDate2: '',
+        cause2: '',
+        year2: '',
+        conduct2: '',
+        work2: '',
+        sign2: ''
     })));
   };
 
@@ -379,7 +411,7 @@ export function TcCcGenerator() {
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
       <style>{`
         @media print {
-          @page { size: A4 ${printLayout}; margin: 10mm; }
+          @page { size: A4 ${printLayout}; margin: ${certType === 'SR_TC' ? '4mm 6mm' : '10mm'}; }
           .print\\:max-w-full { max-width: 100% !important; width: 100% !important; }
         }
       `}</style>
@@ -580,7 +612,15 @@ export function TcCcGenerator() {
                   year: '',
                   conduct: '',
                   work: '',
-                  sign: ''
+                  sign: '',
+                  admDate2: '',
+                  promDate2: '',
+                  remDate2: '',
+                  cause2: '',
+                  year2: '',
+                  conduct2: '',
+                  work2: '',
+                  sign2: ''
                 }));
                 setGridRows(rows);
               }}
@@ -747,6 +787,9 @@ export function TcCcGenerator() {
               <Label>Removal Cause (निष्कासन कारण)</Label>
               <Input value={timelineRemovalCause} onChange={e => setTimelineRemovalCause(e.target.value)} />
             </div>
+            <p className="text-[9px] text-slate-700 bg-slate-100 p-1.5 rounded border border-slate-200">
+              📌 <strong>2 Rows प्रति कक्षा:</strong> पत्रावली तालिका में प्रत्येक कक्षा के लिए दो पंक्तियाँ उपलब्ध हैं।
+            </p>
             <div className="flex gap-2 mt-2">
               <Button 
                 type="button" 
@@ -978,7 +1021,7 @@ export function TcCcGenerator() {
                 </div>
 
                 {/* The Classes Grid */}
-                    <div className="my-2 overflow-x-auto">
+                <div className="my-1.5 overflow-x-auto">
                   <table className="w-full border-collapse border border-slate-400 font-serif text-[8px]">
                     <thead>
                       <tr className="bg-slate-50 text-slate-800">
@@ -995,129 +1038,261 @@ export function TcCcGenerator() {
                     </thead>
                     <tbody>
                       {gridRows.map((row, index) => (
-                        <tr key={row.id} className="hover:bg-slate-50/50">
-                          <td className="border border-slate-350 p-0.5 text-center font-bold bg-slate-50 text-slate-800">{row.classLabel}</td>
-                          <td className="border border-slate-350 p-0 relative">
-                            <input 
-                              type="text" 
-                              value={row.admDate} 
-                              onChange={e => {
-                                const updated = [...gridRows];
-                                updated[index].admDate = e.target.value;
-                                setGridRows(updated);
-                              }} 
-                              className="w-full bg-transparent text-center font-bold text-blue-800 py-0.5 border-none focus:outline-none print:hidden text-[9px]" 
-                            />
-                            <div className={`hidden print:block text-center font-serif font-bold text-slate-900 py-0.5 break-words whitespace-normal px-0.5 ${getDynamicFontSizeClass(row.admDate, 'text-[8px]')}`}>
-                              {row.admDate}
-                            </div>
-                          </td>
-                          <td className="border border-slate-350 p-0 relative">
-                            <input 
-                              type="text" 
-                              value={row.promDate} 
-                              onChange={e => {
-                                const updated = [...gridRows];
-                                updated[index].promDate = e.target.value;
-                                setGridRows(updated);
-                              }} 
-                              className="w-full bg-transparent text-center font-bold text-blue-800 py-0.5 border-none focus:outline-none print:hidden text-[9px]" 
-                            />
-                            <div className={`hidden print:block text-center font-serif font-bold text-slate-900 py-0.5 break-words whitespace-normal px-0.5 ${getDynamicFontSizeClass(row.promDate, 'text-[8px]')}`}>
-                              {row.promDate}
-                            </div>
-                          </td>
-                          <td className="border border-slate-350 p-0 relative">
-                            <input 
-                              type="text" 
-                              value={row.remDate} 
-                              onChange={e => {
-                                const updated = [...gridRows];
-                                updated[index].remDate = e.target.value;
-                                setGridRows(updated);
-                              }} 
-                              className="w-full bg-transparent text-center font-bold text-blue-800 py-0.5 border-none focus:outline-none print:hidden text-[9px]" 
-                            />
-                            <div className={`hidden print:block text-center font-serif font-bold text-slate-900 py-0.5 break-words whitespace-normal px-0.5 ${getDynamicFontSizeClass(row.remDate, 'text-[8px]')}`}>
-                              {row.remDate}
-                            </div>
-                          </td>
-                          <td className="border border-slate-350 p-0 relative">
-                            <input 
-                              type="text" 
-                              value={row.cause} 
-                              onChange={e => {
-                                const updated = [...gridRows];
-                                updated[index].cause = e.target.value;
-                                setGridRows(updated);
-                              }} 
-                              className="w-full bg-transparent text-center font-bold text-blue-800 py-0.5 border-none focus:outline-none px-0.5 print:hidden text-[9px]" 
-                            />
-                            <div className={`hidden print:block text-center font-serif font-bold text-slate-900 py-0.5 break-words whitespace-normal px-0.5 ${getDynamicFontSizeClass(row.cause, 'text-[8px]')}`}>
-                              {row.cause}
-                            </div>
-                          </td>
-                          <td className="border border-slate-350 p-0 relative">
-                            <input 
-                              type="text" 
-                              value={row.year} 
-                              onChange={e => {
-                                const updated = [...gridRows];
-                                updated[index].year = e.target.value;
-                                setGridRows(updated);
-                              }} 
-                              className="w-full bg-transparent text-center font-bold text-blue-800 py-0.5 border-none focus:outline-none print:hidden text-[9px]" 
-                            />
-                            <div className={`hidden print:block text-center font-serif font-bold text-slate-900 py-0.5 break-words whitespace-normal px-0.5 ${getDynamicFontSizeClass(row.year, 'text-[8px]')}`}>
-                              {row.year}
-                            </div>
-                          </td>
-                          <td className="border border-slate-350 p-0 relative">
-                            <input 
-                              type="text" 
-                              value={row.conduct} 
-                              onChange={e => {
-                                const updated = [...gridRows];
-                                updated[index].conduct = e.target.value;
-                                setGridRows(updated);
-                              }} 
-                              className="w-full bg-transparent text-center font-bold text-blue-800 py-0.5 border-none focus:outline-none print:hidden text-[9px]" 
-                            />
-                            <div className={`hidden print:block text-center font-serif font-bold text-slate-900 py-0.5 break-words whitespace-normal px-0.5 ${getDynamicFontSizeClass(row.conduct, 'text-[8px]')}`}>
-                              {row.conduct}
-                            </div>
-                          </td>
-                          <td className="border border-slate-350 p-0 relative">
-                            <input 
-                              type="text" 
-                              value={row.work} 
-                              onChange={e => {
-                                const updated = [...gridRows];
-                                updated[index].work = e.target.value;
-                                setGridRows(updated);
-                              }} 
-                              className="w-full bg-transparent text-center font-bold text-blue-800 py-0.5 border-none focus:outline-none print:hidden text-[9px]" 
-                            />
-                            <div className={`hidden print:block text-center font-serif font-bold text-slate-900 py-0.5 break-words whitespace-normal px-0.5 ${getDynamicFontSizeClass(row.work, 'text-[8px]')}`}>
-                              {row.work}
-                            </div>
-                          </td>
-                          <td className="border border-slate-350 p-0 relative">
-                            <input 
-                              type="text" 
-                              value={row.sign} 
-                              onChange={e => {
-                                const updated = [...gridRows];
-                                updated[index].sign = e.target.value;
-                                setGridRows(updated);
-                              }} 
-                              className="w-full bg-transparent text-center font-bold text-blue-800 py-0.5 border-none focus:outline-none print:hidden text-[9px]" 
-                            />
-                            <div className={`hidden print:block text-center font-serif font-bold text-slate-900 py-0.5 break-words whitespace-normal px-0.5 ${getDynamicFontSizeClass(row.sign, 'text-[8px]')}`}>
-                              {row.sign}
-                            </div>
-                          </td>
-                        </tr>
+                        <React.Fragment key={row.id}>
+                          {/* Row 1 */}
+                          <tr className="hover:bg-slate-50/50">
+                            <td 
+                              rowSpan={2} 
+                              className="border border-slate-350 p-0.5 text-center font-bold bg-slate-50 text-slate-800 align-middle text-[8px] print:text-[7.5px] print:p-0"
+                            >
+                              {row.classLabel}
+                            </td>
+                            <td className="border border-slate-350 p-0 relative">
+                              <input 
+                                type="text" 
+                                value={row.admDate} 
+                                onChange={e => {
+                                  const updated = [...gridRows];
+                                  updated[index].admDate = e.target.value;
+                                  setGridRows(updated);
+                                }} 
+                                className="w-full bg-transparent text-center font-bold text-blue-800 py-0.5 border-none focus:outline-none print:hidden text-[8.5px]" 
+                              />
+                              <div className={`hidden print:block text-center font-serif font-bold text-slate-900 py-0.25 break-words whitespace-normal px-0.5 min-h-[11px] ${getDynamicFontSizeClass(row.admDate, 'text-[7.5px]')}`}>
+                                {row.admDate || '\u00A0'}
+                              </div>
+                            </td>
+                            <td className="border border-slate-350 p-0 relative">
+                              <input 
+                                type="text" 
+                                value={row.promDate} 
+                                onChange={e => {
+                                  const updated = [...gridRows];
+                                  updated[index].promDate = e.target.value;
+                                  setGridRows(updated);
+                                }} 
+                                className="w-full bg-transparent text-center font-bold text-blue-800 py-0.5 border-none focus:outline-none print:hidden text-[8.5px]" 
+                              />
+                              <div className={`hidden print:block text-center font-serif font-bold text-slate-900 py-0.25 break-words whitespace-normal px-0.5 min-h-[11px] ${getDynamicFontSizeClass(row.promDate, 'text-[7.5px]')}`}>
+                                {row.promDate || '\u00A0'}
+                              </div>
+                            </td>
+                            <td className="border border-slate-350 p-0 relative">
+                              <input 
+                                type="text" 
+                                value={row.remDate} 
+                                onChange={e => {
+                                  const updated = [...gridRows];
+                                  updated[index].remDate = e.target.value;
+                                  setGridRows(updated);
+                                }} 
+                                className="w-full bg-transparent text-center font-bold text-blue-800 py-0.5 border-none focus:outline-none print:hidden text-[8.5px]" 
+                              />
+                              <div className={`hidden print:block text-center font-serif font-bold text-slate-900 py-0.25 break-words whitespace-normal px-0.5 min-h-[11px] ${getDynamicFontSizeClass(row.remDate, 'text-[7.5px]')}`}>
+                                {row.remDate || '\u00A0'}
+                              </div>
+                            </td>
+                            <td className="border border-slate-350 p-0 relative">
+                              <input 
+                                type="text" 
+                                value={row.cause} 
+                                onChange={e => {
+                                  const updated = [...gridRows];
+                                  updated[index].cause = e.target.value;
+                                  setGridRows(updated);
+                                }} 
+                                className="w-full bg-transparent text-center font-bold text-blue-800 py-0.5 border-none focus:outline-none px-0.5 print:hidden text-[8.5px]" 
+                              />
+                              <div className={`hidden print:block text-center font-serif font-bold text-slate-900 py-0.25 break-words whitespace-normal px-0.5 min-h-[11px] ${getDynamicFontSizeClass(row.cause, 'text-[7.5px]')}`}>
+                                {row.cause || '\u00A0'}
+                              </div>
+                            </td>
+                            <td className="border border-slate-350 p-0 relative">
+                              <input 
+                                type="text" 
+                                value={row.year} 
+                                onChange={e => {
+                                  const updated = [...gridRows];
+                                  updated[index].year = e.target.value;
+                                  setGridRows(updated);
+                                }} 
+                                className="w-full bg-transparent text-center font-bold text-blue-800 py-0.5 border-none focus:outline-none print:hidden text-[8.5px]" 
+                              />
+                              <div className={`hidden print:block text-center font-serif font-bold text-slate-900 py-0.25 break-words whitespace-normal px-0.5 min-h-[11px] ${getDynamicFontSizeClass(row.year, 'text-[7.5px]')}`}>
+                                {row.year || '\u00A0'}
+                              </div>
+                            </td>
+                            <td className="border border-slate-350 p-0 relative">
+                              <input 
+                                type="text" 
+                                value={row.conduct} 
+                                onChange={e => {
+                                  const updated = [...gridRows];
+                                  updated[index].conduct = e.target.value;
+                                  setGridRows(updated);
+                                }} 
+                                className="w-full bg-transparent text-center font-bold text-blue-800 py-0.5 border-none focus:outline-none print:hidden text-[8.5px]" 
+                              />
+                              <div className={`hidden print:block text-center font-serif font-bold text-slate-900 py-0.25 break-words whitespace-normal px-0.5 min-h-[11px] ${getDynamicFontSizeClass(row.conduct, 'text-[7.5px]')}`}>
+                                {row.conduct || '\u00A0'}
+                              </div>
+                            </td>
+                            <td className="border border-slate-350 p-0 relative">
+                              <input 
+                                type="text" 
+                                value={row.work} 
+                                onChange={e => {
+                                  const updated = [...gridRows];
+                                  updated[index].work = e.target.value;
+                                  setGridRows(updated);
+                                }} 
+                                className="w-full bg-transparent text-center font-bold text-blue-800 py-0.5 border-none focus:outline-none print:hidden text-[8.5px]" 
+                              />
+                              <div className={`hidden print:block text-center font-serif font-bold text-slate-900 py-0.25 break-words whitespace-normal px-0.5 min-h-[11px] ${getDynamicFontSizeClass(row.work, 'text-[7.5px]')}`}>
+                                {row.work || '\u00A0'}
+                              </div>
+                            </td>
+                            <td className="border border-slate-350 p-0 relative">
+                              <input 
+                                type="text" 
+                                value={row.sign} 
+                                onChange={e => {
+                                  const updated = [...gridRows];
+                                  updated[index].sign = e.target.value;
+                                  setGridRows(updated);
+                                }} 
+                                className="w-full bg-transparent text-center font-bold text-blue-800 py-0.5 border-none focus:outline-none print:hidden text-[8.5px]" 
+                              />
+                              <div className={`hidden print:block text-center font-serif font-bold text-slate-900 py-0.25 break-words whitespace-normal px-0.5 min-h-[11px] ${getDynamicFontSizeClass(row.sign, 'text-[7.5px]')}`}>
+                                {row.sign || '\u00A0'}
+                              </div>
+                            </td>
+                          </tr>
+
+                          {/* Row 2 */}
+                          <tr className="hover:bg-slate-50/50">
+                            <td className="border border-slate-350 p-0 relative">
+                              <input 
+                                type="text" 
+                                value={row.admDate2 || ''} 
+                                onChange={e => {
+                                  const updated = [...gridRows];
+                                  updated[index].admDate2 = e.target.value;
+                                  setGridRows(updated);
+                                }} 
+                                className="w-full bg-transparent text-center font-bold text-blue-800 py-0.5 border-none focus:outline-none print:hidden text-[8px]" 
+                              />
+                              <div className={`hidden print:block text-center font-serif font-bold text-slate-900 py-0.25 break-words whitespace-normal px-0.5 min-h-[11px] ${getDynamicFontSizeClass(row.admDate2 || '', 'text-[7.5px]')}`}>
+                                {row.admDate2 || '\u00A0'}
+                              </div>
+                            </td>
+                            <td className="border border-slate-350 p-0 relative">
+                              <input 
+                                type="text" 
+                                value={row.promDate2 || ''} 
+                                onChange={e => {
+                                  const updated = [...gridRows];
+                                  updated[index].promDate2 = e.target.value;
+                                  setGridRows(updated);
+                                }} 
+                                className="w-full bg-transparent text-center font-bold text-blue-800 py-0.5 border-none focus:outline-none print:hidden text-[8px]" 
+                              />
+                              <div className={`hidden print:block text-center font-serif font-bold text-slate-900 py-0.25 break-words whitespace-normal px-0.5 min-h-[11px] ${getDynamicFontSizeClass(row.promDate2 || '', 'text-[7.5px]')}`}>
+                                {row.promDate2 || '\u00A0'}
+                              </div>
+                            </td>
+                            <td className="border border-slate-350 p-0 relative">
+                              <input 
+                                type="text" 
+                                value={row.remDate2 || ''} 
+                                onChange={e => {
+                                  const updated = [...gridRows];
+                                  updated[index].remDate2 = e.target.value;
+                                  setGridRows(updated);
+                                }} 
+                                className="w-full bg-transparent text-center font-bold text-blue-800 py-0.5 border-none focus:outline-none print:hidden text-[8px]" 
+                              />
+                              <div className={`hidden print:block text-center font-serif font-bold text-slate-900 py-0.25 break-words whitespace-normal px-0.5 min-h-[11px] ${getDynamicFontSizeClass(row.remDate2 || '', 'text-[7.5px]')}`}>
+                                {row.remDate2 || '\u00A0'}
+                              </div>
+                            </td>
+                            <td className="border border-slate-350 p-0 relative">
+                              <input 
+                                type="text" 
+                                value={row.cause2 || ''} 
+                                onChange={e => {
+                                  const updated = [...gridRows];
+                                  updated[index].cause2 = e.target.value;
+                                  setGridRows(updated);
+                                }} 
+                                className="w-full bg-transparent text-center font-bold text-blue-800 py-0.5 border-none focus:outline-none px-0.5 print:hidden text-[8px]" 
+                              />
+                              <div className={`hidden print:block text-center font-serif font-bold text-slate-900 py-0.25 break-words whitespace-normal px-0.5 min-h-[11px] ${getDynamicFontSizeClass(row.cause2 || '', 'text-[7.5px]')}`}>
+                                {row.cause2 || '\u00A0'}
+                              </div>
+                            </td>
+                            <td className="border border-slate-350 p-0 relative">
+                              <input 
+                                type="text" 
+                                value={row.year2 || ''} 
+                                onChange={e => {
+                                  const updated = [...gridRows];
+                                  updated[index].year2 = e.target.value;
+                                  setGridRows(updated);
+                                }} 
+                                className="w-full bg-transparent text-center font-bold text-blue-800 py-0.5 border-none focus:outline-none print:hidden text-[8px]" 
+                              />
+                              <div className={`hidden print:block text-center font-serif font-bold text-slate-900 py-0.25 break-words whitespace-normal px-0.5 min-h-[11px] ${getDynamicFontSizeClass(row.year2 || '', 'text-[7.5px]')}`}>
+                                {row.year2 || '\u00A0'}
+                              </div>
+                            </td>
+                            <td className="border border-slate-350 p-0 relative">
+                              <input 
+                                type="text" 
+                                value={row.conduct2 || ''} 
+                                onChange={e => {
+                                  const updated = [...gridRows];
+                                  updated[index].conduct2 = e.target.value;
+                                  setGridRows(updated);
+                                }} 
+                                className="w-full bg-transparent text-center font-bold text-blue-800 py-0.5 border-none focus:outline-none print:hidden text-[8px]" 
+                              />
+                              <div className={`hidden print:block text-center font-serif font-bold text-slate-900 py-0.25 break-words whitespace-normal px-0.5 min-h-[11px] ${getDynamicFontSizeClass(row.conduct2 || '', 'text-[7.5px]')}`}>
+                                {row.conduct2 || '\u00A0'}
+                              </div>
+                            </td>
+                            <td className="border border-slate-350 p-0 relative">
+                              <input 
+                                type="text" 
+                                value={row.work2 || ''} 
+                                onChange={e => {
+                                  const updated = [...gridRows];
+                                  updated[index].work2 = e.target.value;
+                                  setGridRows(updated);
+                                }} 
+                                className="w-full bg-transparent text-center font-bold text-blue-800 py-0.5 border-none focus:outline-none print:hidden text-[8px]" 
+                              />
+                              <div className={`hidden print:block text-center font-serif font-bold text-slate-900 py-0.25 break-words whitespace-normal px-0.5 min-h-[11px] ${getDynamicFontSizeClass(row.work2 || '', 'text-[7.5px]')}`}>
+                                {row.work2 || '\u00A0'}
+                              </div>
+                            </td>
+                            <td className="border border-slate-350 p-0 relative">
+                              <input 
+                                type="text" 
+                                value={row.sign2 || ''} 
+                                onChange={e => {
+                                  const updated = [...gridRows];
+                                  updated[index].sign2 = e.target.value;
+                                  setGridRows(updated);
+                                }} 
+                                className="w-full bg-transparent text-center font-bold text-blue-800 py-0.5 border-none focus:outline-none print:hidden text-[8px]" 
+                              />
+                              <div className={`hidden print:block text-center font-serif font-bold text-slate-900 py-0.25 break-words whitespace-normal px-0.5 min-h-[11px] ${getDynamicFontSizeClass(row.sign2 || '', 'text-[7.5px]')}`}>
+                                {row.sign2 || '\u00A0'}
+                              </div>
+                            </td>
+                          </tr>
+                        </React.Fragment>
                       ))}
                     </tbody>
                   </table>
